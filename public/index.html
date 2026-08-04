@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Emoji Survey Scramble</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div id="toast" class="toast hidden"></div>
+
+<!-- LOGIN -->
+<section id="screen-login" class="screen active">
+  <div class="card">
+    <h1 class="logo">Survey Scramble!</h1>
+    <p class="tagline">Guess the top 10 keywords for each emoji before time runs out!</p>
+
+    <label class="field">
+      <span>Your name</span>
+      <input id="input-username" type="text" maxlength="20" placeholder="Player1234" autocomplete="off" />
+    </label>
+
+    <button id="btn-create-room" class="btn btn-primary">Create Room</button>
+
+    <div class="divider"><span>or</span></div>
+
+    <label class="field">
+      <span>Room code</span>
+      <input id="input-room-code" type="text" maxlength="4" placeholder="ABCD" autocomplete="off" style="text-transform:uppercase" />
+    </label>
+    <button id="btn-join-room" class="btn btn-secondary">Join Room</button>
+
+    <p id="login-error" class="error-text hidden"></p>
+  </div>
+</section>
+
+<!-- LOBBY -->
+<section id="screen-lobby" class="screen">
+  <div class="card">
+    <h2>Room Code</h2>
+    <div id="lobby-room-code" class="room-code">ABCD</div>
+    <p class="hint">Share this code with friends so they can join.</p>
+
+    <h3>Players</h3>
+    <ul id="lobby-player-list" class="player-list"></ul>
+
+    <button id="btn-start-game" class="btn btn-primary hidden">Start Game</button>
+    <p id="lobby-waiting" class="hint">Waiting for the host to start the game…</p>
+  </div>
+</section>
+
+<!-- GAME -->
+<section id="screen-game" class="screen">
+  <div class="game-top">
+    <div class="round-badge">Round <span id="game-round-number">1</span> / <span id="game-total-rounds">3</span></div>
+    <div id="game-timer" class="timer">30</div>
+    <div class="my-score">Score: <span id="game-my-score">0</span></div>
+  </div>
+
+  <div class="emoji-display" id="game-emoji">🤔</div>
+
+  <div id="answer-board" class="answer-board"></div>
+
+  <form id="guess-form" class="guess-form">
+    <input id="input-guess" type="text" placeholder="Type a keyword…" autocomplete="off" maxlength="40" />
+    <button type="submit" class="btn btn-primary">Submit</button>
+  </form>
+  <p id="guess-feedback" class="guess-feedback"></p>
+
+  <div class="game-side">
+    <h3>Leaderboard</h3>
+    <ol id="game-leaderboard" class="leaderboard"></ol>
+  </div>
+</section>
+
+<!-- ROUND END / SCORING -->
+<section id="screen-scoring" class="screen">
+  <div class="card wide">
+    <h2 id="scoring-title">Round Results</h2>
+    <div class="scoring-emoji" id="scoring-emoji">🤔</div>
+
+    <div id="scoring-answer-board" class="answer-board"></div>
+
+    <h3>Leaderboard</h3>
+    <ol id="scoring-leaderboard" class="leaderboard"></ol>
+
+    <button id="btn-next-round" class="btn btn-primary hidden">Next Round</button>
+    <button id="btn-to-final" class="btn btn-primary hidden">See Final Results</button>
+    <p id="scoring-waiting" class="hint">Waiting for the host…</p>
+  </div>
+</section>
+
+<!-- FINAL -->
+<section id="screen-final" class="screen">
+  <div class="card">
+    <h1 class="logo">🏆 Final Results</h1>
+    <ol id="final-leaderboard" class="leaderboard"></ol>
+    <button id="btn-go-home" class="btn btn-primary">Go Home</button>
+  </div>
+</section>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="client.js"></script>
+</body>
+</html>
