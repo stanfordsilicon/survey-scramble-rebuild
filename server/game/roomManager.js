@@ -45,7 +45,9 @@ function pickRoundBoards() {
     boardIndex,
     emoji: EMOJI_BOARDS[boardIndex].emoji,
     keywords: EMOJI_BOARDS[boardIndex].keywords,
-    revealed: {},
+    // Keyed by playerId — each player fills in their own board independently,
+    // so one player's guesses never reveal words on anyone else's screen.
+    revealedByPlayer: {},
     startedAt: null,
     endsAt: null,
   }));
@@ -122,7 +124,8 @@ async function submitGuess(roomCode, playerId, guessText) {
   const guess = normalizeGuess(guessText);
   if (!guess) return { result: 'empty' };
 
-  if (round.revealed[guess]) {
+  const myRevealed = round.revealedByPlayer[playerId] || (round.revealedByPlayer[playerId] = {});
+  if (myRevealed[guess]) {
     return { result: 'already-revealed', keyword: guess };
   }
 
@@ -132,7 +135,7 @@ async function submitGuess(roomCode, playerId, guessText) {
   }
 
   const points = pointsForRank(rankIndex);
-  round.revealed[guess] = { rankIndex, revealedBy: player.username, points };
+  myRevealed[guess] = { rankIndex, points };
   player.score += points;
 
   await store.saveRoom(room);
@@ -142,7 +145,6 @@ async function submitGuess(roomCode, playerId, guessText) {
     rankIndex,
     points,
     scoreTotal: player.score,
-    revealedBy: player.username,
   };
 }
 
@@ -205,16 +207,18 @@ async function leaveRoom(roomCode, playerId) {
   return room;
 }
 
-// Shapes a room for a specific client: strips the current round's answer key
-// so players can't read it out of the network payload while it's still live.
-function toClientView(room) {
+// Shapes a room for a specific player: strips the current round's answer key
+// so it can't be read out of the network payload while still live, and scopes
+// `revealed` to that player's own board only — other players' guesses never
+// appear here, since everyone plays the same emoji on an independent board.
+function toClientView(room, forPlayerId) {
   const currentRound = room.roundIndex >= 0 ? room.rounds[room.roundIndex] : null;
   const roundView = currentRound
     ? {
         roundNumber: room.roundIndex + 1,
         emoji: currentRound.emoji,
         endsAt: currentRound.endsAt,
-        revealed: currentRound.revealed,
+        revealed: currentRound.revealedByPlayer[forPlayerId] || {},
         ...(room.state !== 'playing' ? { keywords: currentRound.keywords } : {}),
       }
     : null;

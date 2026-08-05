@@ -135,8 +135,16 @@
         guessFeedback.textContent = `✅ "${outcome.keyword}" — +${outcome.points} points!`;
         guessFeedback.className = 'guess-feedback correct';
         guessInput.value = '';
+        // Reflected locally only — every player fills in their own board, so
+        // nobody else's screen changes when this guess lands.
+        room.round.revealed[outcome.keyword] = { rankIndex: outcome.rankIndex, points: outcome.points };
+        const me = room.players.find((p) => p.id === myId);
+        if (me) me.score = outcome.scoreTotal;
+        renderAnswerBoard(document.getElementById('answer-board'), room.round, false);
+        renderLeaderboard(document.getElementById('game-leaderboard'), room.players);
+        renderMyScore();
       } else if (outcome.result === 'already-revealed') {
-        guessFeedback.textContent = `Someone already guessed "${outcome.keyword}".`;
+        guessFeedback.textContent = `You already guessed "${outcome.keyword}".`;
         guessFeedback.className = 'guess-feedback info';
       } else if (outcome.result === 'no-match') {
         guessFeedback.textContent = `Not in the top 10. Try again!`;
@@ -145,13 +153,15 @@
     });
   });
 
-  socket.on('guess_correct', ({ rankIndex, keyword, points, revealedBy, players }) => {
-    if (!room || !room.round) return;
-    room.round.revealed[keyword] = { rankIndex, revealedBy, points };
+  // Shared scoreboard only — other players' guesses never touch this
+  // client's own answer board.
+  socket.on('score_update', ({ players }) => {
+    if (!room) return;
     room.players = players;
-    renderAnswerBoard(document.getElementById('answer-board'), room.round, false);
-    renderLeaderboard(document.getElementById('game-leaderboard'), room.players);
-    renderMyScore();
+    if (screens.game.classList.contains('active')) {
+      renderLeaderboard(document.getElementById('game-leaderboard'), room.players);
+      renderMyScore();
+    }
   });
 
   function renderMyScore() {
