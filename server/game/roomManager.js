@@ -3,9 +3,14 @@
 // This module is deliberately free of any Socket.io / networking knowledge —
 // it only reads and writes plain JSON-shaped "room" objects via ./store.js.
 // server.js is responsible for wiring these functions to socket events and
-// for round timers. Keeping the split this way means the persistence layer
-// (store.js) and the transport layer (server.js) can each be swapped out
-// independently of the rules below.
+// for round/reconnect timers. Keeping the split this way means the
+// persistence layer (store.js) and the transport layer (server.js) can each
+// be swapped out independently of the rules below.
+//
+// Player identity is a client-generated id (persisted in the browser's
+// localStorage), NOT the Socket.io socket id — a refresh gets a new socket
+// but keeps the same player id, which is what makes rejoin-after-refresh,
+// play-again, and the frozen final leaderboard all work.
 
 const { EMOJI_BOARDS, pointsForRank } = require('../data/emojiData');
 const store = require('./store');
@@ -74,20 +79,21 @@ function makePlayer(id, username, colorIndex) {
   };
 }
 
-async function createRoom(hostId, username) {
+async function createRoom(playerId, username) {
   const roomCode = await generateUniqueRoomCode();
   const room = {
     roomCode,
-    hostId,
+    hostId: playerId,
     state: 'lobby', // lobby | playing | roundEnd | final
     players: {
-      [hostId]: makePlayer(hostId, username, 0),
+      [playerId]: makePlayer(playerId, username, 0),
     },
-    playerOrder: [hostId],
+    playerOrder: [playerId],
     totalRounds: TOTAL_ROUNDS,
     roundSeconds: ROUND_SECONDS,
     roundIndex: -1,
     rounds: [],
+    finalLeaderboard: null,
     createdAt: Date.now(),
   };
   await store.saveRoom(room);
@@ -97,11 +103,38 @@ async function createRoom(hostId, username) {
 async function joinRoom(roomCode, playerId, username) {
   const room = await store.getRoom(roomCode);
   if (!room) throw err('ROOM_NOT_FOUND', 'That room code does not exist.');
+  if (room.players[playerId]) {
+    // Already a member (e.g. duplicate join from the same device) — treat as reconnect.
+    return reconnectPlayer(roomCode, playerId, username);
+  }
   if (room.state !== 'lobby') throw err('GAME_IN_PROGRESS', 'That game has already started.');
   if (room.playerOrder.length >= MAX_PLAYERS) throw err('ROOM_FULL', 'That room is full.');
 
   room.players[playerId] = makePlayer(playerId, username, room.playerOrder.length);
   room.playerOrder.push(playerId);
+  await store.saveRoom(room);
+  return room;
+}
+
+// Used both for an explicit rejoin_room call (after a refresh) and as the
+// fallback when join_room is called by someone already in the room.
+async function reconnectPlayer(roomCode, playerId, username) {
+  const room = await store.getRoom(roomCode);
+  if (!room) throw err('ROOM_NOT_FOUND', 'That room no longer exists.');
+  const player = room.players[playerId];
+  if (!player) throw err('NOT_IN_ROOM', 'You are not in this room.');
+
+  player.connected = true;
+  if (username) player.username = username;
+  if (!room.playerOrder.includes(playerId)) room.playerOrder.push(playerId);
+  await store.saveRoom(room);
+  return room;
+}
+
+async function markDisconnected(roomCode, playerId) {
+  const room = await store.getRoom(roomCode);
+  if (!room) return null;
+  if (room.players[playerId]) room.players[playerId].connected = false;
   await store.saveRoom(room);
   return room;
 }
@@ -128,15 +161,48 @@ async function startGame(roomCode, requesterId) {
   if (room.hostId !== requesterId) throw err('NOT_HOST', 'Only the host can start the game.');
   if (room.state !== 'lobby') throw err('GAME_IN_PROGRESS', 'The game has already started.');
   if (room.playerOrder.length < 1) throw err('NOT_ENOUGH_PLAYERS', 'Need at least one player.');
-  const allReady = room.playerOrder.every((id) => room.players[id] && room.players[id].ready);
+  // A disconnected player still mid-grace-period shouldn't block the rest of
+  // the group from starting (or restarting via Play Again) — only players
+  // who are actually present need to have readied up.
+  const allReady = room.playerOrder.every((id) => {
+    const player = room.players[id];
+    return player && (!player.connected || player.ready);
+  });
   if (!allReady) throw err('NOT_ALL_READY', 'Everyone needs to be ready before starting.');
 
   room.rounds = pickRoundBoards();
   room.roundIndex = 0;
   room.state = 'playing';
+  room.finalLeaderboard = null;
   const round = room.rounds[0];
   round.startedAt = Date.now();
   round.endsAt = round.startedAt + ROUND_SECONDS * 1000;
+
+  await store.saveRoom(room);
+  return room;
+}
+
+// Resets a finished room back to the lobby so the same group can play again
+// without re-sharing the room code — scores and ready state reset, but the
+// room, its code, and its players all stay put (so late joiners can still
+// hop in before the next start).
+async function playAgain(roomCode, requesterId) {
+  const room = await store.getRoom(roomCode);
+  if (!room) throw err('ROOM_NOT_FOUND', 'That room code does not exist.');
+  if (room.hostId !== requesterId) throw err('NOT_HOST', 'Only the host can start a new game.');
+  if (room.state !== 'final') throw err('WRONG_STATE', 'The game has not finished yet.');
+
+  room.state = 'lobby';
+  room.roundIndex = -1;
+  room.rounds = [];
+  room.finalLeaderboard = null;
+  for (const id of room.playerOrder) {
+    const player = room.players[id];
+    if (player) {
+      player.score = 0;
+      player.ready = false;
+    }
+  }
 
   await store.saveRoom(room);
   return room;
@@ -194,6 +260,13 @@ async function endRound(roomCode) {
 
   const isFinalRound = room.roundIndex >= room.totalRounds - 1;
   room.state = isFinalRound ? 'final' : 'roundEnd';
+  if (isFinalRound) {
+    // Freeze the standings the instant the game ends. Anyone who closes
+    // their tab afterward is filtered out of the *live* playerOrder-based
+    // leaderboard, but this snapshot is what the final screen renders from,
+    // so their result stays put regardless.
+    room.finalLeaderboard = buildLeaderboard(room);
+  }
   await store.saveRoom(room);
   return room;
 }
@@ -215,6 +288,9 @@ async function nextRound(roomCode, requesterId) {
   return room;
 }
 
+// Full removal — used once a disconnect's grace period actually expires, or
+// immediately for an explicit "leave" (Go Home). Distinct from
+// markDisconnected, which just flips a flag and keeps the player's seat warm.
 async function leaveRoom(roomCode, playerId) {
   const room = await store.getRoom(roomCode);
   if (!room) return null;
@@ -261,6 +337,7 @@ function toClientView(room) {
     roundSeconds: room.roundSeconds,
     players: buildLeaderboard(room),
     round: roundView,
+    finalLeaderboard: room.finalLeaderboard || null,
   };
 }
 
@@ -269,9 +346,12 @@ module.exports = {
   ROUND_SECONDS,
   createRoom,
   joinRoom,
+  reconnectPlayer,
+  markDisconnected,
   getRoom,
   setReady,
   startGame,
+  playAgain,
   submitGuess,
   endRound,
   nextRound,

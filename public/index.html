@@ -50,6 +50,19 @@
     <button id="btn-toggle-ready" class="btn btn-secondary">Ready Up</button>
     <button id="btn-start-game" class="btn btn-primary hidden" disabled>Start Game</button>
     <p id="lobby-waiting" class="hint">Waiting for everyone to be ready…</p>
+
+    <div id="lobby-solo-hint" class="solo-hint hidden">
+      <p class="hint">Nobody else has joined yet.</p>
+      <button id="btn-play-solo" class="btn btn-secondary">🎮 Play Solo For Now</button>
+    </div>
+
+    <div id="lobby-factoid" class="factoid-box hidden">
+      <span class="factoid-icon">💡</span>
+      <span class="factoid-body">
+        <span class="factoid-label">Did you know?</span>
+        <span class="factoid-text" id="lobby-factoid-text"></span>
+      </span>
+    </div>
   </div>
 </section>
 
@@ -65,15 +78,17 @@
 
   <div id="answer-board" class="answer-board"></div>
 
-  <form id="guess-form" class="guess-form">
-    <input id="input-guess" type="text" placeholder="Type a keyword…" autocomplete="off" maxlength="40" />
-    <button type="submit" class="btn btn-primary">Submit</button>
-  </form>
-  <p id="guess-feedback" class="guess-feedback"></p>
-
   <div class="game-side">
     <h3>Leaderboard</h3>
     <ol id="game-leaderboard" class="leaderboard"></ol>
+  </div>
+
+  <div class="game-input-bar">
+    <form id="guess-form" class="guess-form">
+      <input id="input-guess" type="text" placeholder="Type a keyword…" autocomplete="off" maxlength="40" />
+      <button type="submit" class="btn btn-primary">Submit</button>
+    </form>
+    <p id="guess-feedback" class="guess-feedback"></p>
   </div>
 </section>
 
@@ -99,10 +114,13 @@
   <div class="card">
     <h1 class="logo">🏆 Final Results</h1>
     <ol id="final-leaderboard" class="leaderboard"></ol>
-    <button id="btn-go-home" class="btn btn-primary">Go Home</button>
+    <button id="btn-play-again" class="btn btn-primary hidden">🔁 Play Again</button>
+    <p id="final-waiting" class="hint hidden">Waiting for the host to start a new game…</p>
+    <button id="btn-go-home" class="btn btn-secondary">Go Home</button>
   </div>
 </section>
 
+<script src="factoids.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="client.js"></script>
 </body>

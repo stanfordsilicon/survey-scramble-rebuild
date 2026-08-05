@@ -1,13 +1,53 @@
 (() => {
   const socket = io();
 
+  // Player identity is a persistent id kept in sessionStorage (not the
+  // socket id) — a page refresh gets a brand new socket connection but keeps
+  // the same device id, which is what lets rejoin_room put you right back
+  // where you were instead of bouncing you to the login screen.
+  //
+  // sessionStorage rather than localStorage is deliberate: localStorage is
+  // shared by every tab on the same origin, so two tabs of this game open in
+  // one browser would silently collapse into a single player identity.
+  // sessionStorage is scoped to one tab (but still survives a refresh of
+  // that tab), which is exactly "one player per device/tab".
+  function getDeviceId() {
+    let id = sessionStorage.getItem('qmoji_device_id');
+    if (!id) {
+      id = window.crypto && window.crypto.randomUUID
+        ? window.crypto.randomUUID()
+        : `p_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      sessionStorage.setItem('qmoji_device_id', id);
+    }
+    return id;
+  }
+
+  const myId = getDeviceId();
+
+  function saveSession(roomCode, username) {
+    sessionStorage.setItem('qmoji_session', JSON.stringify({ roomCode, username }));
+  }
+
+  function clearSession() {
+    sessionStorage.removeItem('qmoji_session');
+  }
+
+  function loadSession() {
+    try {
+      return JSON.parse(sessionStorage.getItem('qmoji_session') || 'null');
+    } catch (e) {
+      return null;
+    }
+  }
+
   // The single source of truth for what this client currently knows about the
   // room — always replaced wholesale from the server's room_update / round_*
   // payloads rather than patched piecemeal, so the UI never drifts from the
   // authoritative game state.
   let room = null;
-  let myId = null;
   let timerInterval = null;
+  let soloPromptTimer = null;
+  let factoidInterval = null;
 
   const screens = {
     login: document.getElementById('screen-login'),
@@ -20,6 +60,7 @@
   function showScreen(name) {
     Object.values(screens).forEach((el) => el.classList.remove('active'));
     screens[name].classList.add('active');
+    if (name !== 'lobby') stopSoloPromptAndFactoid();
   }
 
   function toast(message) {
@@ -29,10 +70,6 @@
     clearTimeout(toast._t);
     toast._t = setTimeout(() => el.classList.add('hidden'), 2600);
   }
-
-  socket.on('connect', () => {
-    myId = socket.id;
-  });
 
   // ---------- LOGIN ----------
   const usernameInput = document.getElementById('input-username');
@@ -52,9 +89,11 @@
 
   document.getElementById('btn-create-room').addEventListener('click', () => {
     loginError.classList.add('hidden');
-    socket.emit('create_room', { username: usernameInput.value }, (res) => {
+    const name = usernameInput.value;
+    socket.emit('create_room', { username: name, playerId: myId }, (res) => {
       if (!res.ok) return showLoginError(res.error);
       room = res.room;
+      saveSession(room.roomCode, name || usernameInput.value);
       renderLobby();
       showScreen('lobby');
     });
@@ -62,12 +101,14 @@
 
   document.getElementById('btn-join-room').addEventListener('click', () => {
     loginError.classList.add('hidden');
+    const name = usernameInput.value;
     socket.emit(
       'join_room',
-      { username: usernameInput.value, roomCode: roomCodeInput.value },
+      { username: name, roomCode: roomCodeInput.value, playerId: myId },
       (res) => {
         if (!res.ok) return showLoginError(res.error);
         room = res.room;
+        saveSession(room.roomCode, name || usernameInput.value);
         renderLobby();
         showScreen('lobby');
       }
@@ -79,7 +120,43 @@
     loginError.classList.remove('hidden');
   }
 
+  // ---------- REJOIN AFTER REFRESH ----------
+  // On connect (including the very first page load), try to resume whatever
+  // room this device was last in. If the room's gone, just fall back to login.
+  socket.on('connect', () => {
+    const session = loadSession();
+    if (!session || !session.roomCode) return;
+    socket.emit('rejoin_room', { roomCode: session.roomCode, playerId: myId, username: session.username }, (res) => {
+      if (!res.ok) {
+        clearSession();
+        return;
+      }
+      usernameInput.value = session.username || '';
+      room = res.room;
+      enterRoomAtCurrentState(room);
+    });
+  });
+
+  function enterRoomAtCurrentState(updatedRoom) {
+    if (updatedRoom.state === 'lobby') {
+      applyLobbyState(updatedRoom);
+    } else if (updatedRoom.state === 'playing') {
+      applyRoundStarted(updatedRoom);
+    } else {
+      applyRoundEnded(updatedRoom);
+    }
+  }
+
   // ---------- LOBBY ----------
+  function renderPlayerBadge(player) {
+    const badge = document.createElement('span');
+    badge.className = 'player-badge';
+    badge.style.backgroundColor = player.color || '#999';
+    badge.textContent = (player.username || '?').trim().charAt(0).toUpperCase() || '?';
+    badge.title = player.username;
+    return badge;
+  }
+
   function renderLobby() {
     document.getElementById('lobby-room-code').textContent = room.roomCode;
 
@@ -87,6 +164,7 @@
     list.innerHTML = '';
     room.players.forEach((p) => {
       const li = document.createElement('li');
+      if (!p.connected) li.classList.add('disconnected');
       const left = document.createElement('span');
       left.className = 'roster-left';
       left.appendChild(renderPlayerBadge(p));
@@ -106,7 +184,7 @@
 
     const isHost = room.hostId === myId;
     const me = room.players.find((p) => p.id === myId);
-    const allReady = room.players.length > 0 && room.players.every((p) => p.ready);
+    const allReady = room.players.length > 0 && room.players.every((p) => !p.connected || p.ready);
 
     const readyBtn = document.getElementById('btn-toggle-ready');
     readyBtn.textContent = me && me.ready ? 'Cancel Ready' : '✅ Ready Up';
@@ -121,6 +199,15 @@
     } else {
       waiting.textContent = 'Waiting for everyone to be ready…';
     }
+
+    maybeShowSoloPrompt();
+    startFactoidRotator();
+  }
+
+  function applyLobbyState(updatedRoom) {
+    room = updatedRoom;
+    renderLobby();
+    showScreen('lobby');
   }
 
   document.getElementById('btn-toggle-ready').addEventListener('click', () => {
@@ -147,11 +234,68 @@
     }
   });
 
-  // ---------- SHARED: room_update (lobby roster / leaderboard changes) ----------
+  // ---------- SOLO PLAY NUDGE ----------
+  // If nobody else has joined after a while, offer to just start solo rather
+  // than leaving the host stuck waiting indefinitely.
+  const SOLO_PROMPT_DELAY_MS = 45000;
+
+  function maybeShowSoloPrompt() {
+    clearTimeout(soloPromptTimer);
+    const hint = document.getElementById('lobby-solo-hint');
+    if (!room || room.players.length > 1) {
+      hint.classList.add('hidden');
+      return;
+    }
+    soloPromptTimer = setTimeout(() => {
+      if (room && room.players.length === 1 && room.state === 'lobby') {
+        hint.classList.remove('hidden');
+      }
+    }, SOLO_PROMPT_DELAY_MS);
+  }
+
+  document.getElementById('btn-play-solo').addEventListener('click', () => {
+    socket.emit('set_ready', { ready: true }, (res) => {
+      if (!res.ok) return toast(res.error);
+      socket.emit('start_game', {}, (res2) => {
+        if (!res2.ok) toast(res2.error);
+      });
+    });
+  });
+
+  // ---------- LOBBY FACTOIDS ----------
+  function startFactoidRotator() {
+    const box = document.getElementById('lobby-factoid');
+    const textEl = document.getElementById('lobby-factoid-text');
+    const facts = window.SURVEY_SCRAMBLE_FACTOIDS || [];
+    if (factoidInterval || !facts.length) return;
+
+    let index = Math.floor(Math.random() * facts.length);
+    textEl.textContent = facts[index];
+    box.classList.remove('hidden');
+
+    factoidInterval = setInterval(() => {
+      textEl.classList.add('fade');
+      setTimeout(() => {
+        index = (index + 1) % facts.length;
+        textEl.textContent = facts[index];
+        textEl.classList.remove('fade');
+      }, 400);
+    }, 7000);
+  }
+
+  function stopSoloPromptAndFactoid() {
+    clearTimeout(soloPromptTimer);
+    clearInterval(factoidInterval);
+    factoidInterval = null;
+    document.getElementById('lobby-solo-hint').classList.add('hidden');
+  }
+
+  // ---------- SHARED: room_update (roster / ready / leaderboard changes, and play-again resets) ----------
   socket.on('room_update', (updatedRoom) => {
     room = updatedRoom;
     if (room.state === 'lobby') {
       renderLobby();
+      showScreen('lobby');
     } else if (screens.game.classList.contains('active')) {
       renderLeaderboard(document.getElementById('game-leaderboard'), room.players);
     } else if (screens.scoring.classList.contains('active')) {
@@ -164,7 +308,7 @@
   const guessInput = document.getElementById('input-guess');
   const guessFeedback = document.getElementById('guess-feedback');
 
-  socket.on('round_started', (updatedRoom) => {
+  function applyRoundStarted(updatedRoom) {
     room = updatedRoom;
     guessInput.value = '';
     guessFeedback.textContent = '';
@@ -178,7 +322,9 @@
     showScreen('game');
     guessInput.focus();
     startTimer(room.round.endsAt);
-  });
+  }
+
+  socket.on('round_started', applyRoundStarted);
 
   guessForm.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -190,7 +336,6 @@
       if (outcome.result === 'correct') {
         guessFeedback.textContent = `✅ "${outcome.keyword}" — +${outcome.points} points!`;
         guessFeedback.className = 'guess-feedback correct';
-        guessInput.value = '';
         // The board itself updates from the room-wide guess_correct broadcast
         // (which also reaches this tab), so nothing to render here directly.
       } else if (outcome.result === 'already-revealed') {
@@ -201,6 +346,11 @@
         guessFeedback.textContent = `Not in the top 10. Try again!`;
         guessFeedback.className = 'guess-feedback wrong';
       }
+      // Clear on every outcome except a fresh correct guess still visible in
+      // the board — an incorrect/duplicate guess shouldn't sit there wasting
+      // the player's time re-deleting it before their next attempt.
+      guessInput.value = '';
+      guessInput.focus();
     });
   });
 
@@ -234,7 +384,7 @@
   }
 
   // ---------- SCORING / ROUND END ----------
-  socket.on('round_ended', (updatedRoom) => {
+  function applyRoundEnded(updatedRoom) {
     room = updatedRoom;
     clearInterval(timerInterval);
     const isFinal = room.state === 'final';
@@ -256,7 +406,9 @@
     waiting.classList.toggle('hidden', isFinal || isHost);
 
     showScreen('scoring');
-  });
+  }
+
+  socket.on('round_ended', applyRoundEnded);
 
   document.getElementById('btn-next-round').addEventListener('click', () => {
     socket.emit('next_round', {}, (res) => {
@@ -265,12 +417,28 @@
   });
 
   document.getElementById('btn-to-final').addEventListener('click', () => {
-    renderLeaderboard(document.getElementById('final-leaderboard'), room.players);
+    showFinalScreen();
+  });
+
+  function showFinalScreen() {
+    const finalPlayers = (room.finalLeaderboard && room.finalLeaderboard.length) ? room.finalLeaderboard : room.players;
+    renderLeaderboard(document.getElementById('final-leaderboard'), finalPlayers);
+
+    const isHost = room.hostId === myId;
+    document.getElementById('btn-play-again').classList.toggle('hidden', !isHost);
+    document.getElementById('final-waiting').classList.toggle('hidden', isHost);
     showScreen('final');
+  }
+
+  document.getElementById('btn-play-again').addEventListener('click', () => {
+    socket.emit('play_again', {}, (res) => {
+      if (!res.ok) toast(res.error);
+    });
   });
 
   document.getElementById('btn-go-home').addEventListener('click', () => {
     socket.emit('leave_room', {}, () => {
+      clearSession();
       room = null;
       showScreen('login');
       usernameInput.value = '';
@@ -279,21 +447,13 @@
   });
 
   // ---------- SHARED RENDER HELPERS ----------
-  function renderPlayerBadge(player) {
-    const badge = document.createElement('span');
-    badge.className = 'player-badge';
-    badge.style.backgroundColor = player.color || '#999';
-    badge.textContent = (player.username || '?').trim().charAt(0).toUpperCase() || '?';
-    badge.title = player.username;
-    return badge;
-  }
-
   function renderLeaderboard(listEl, players) {
     listEl.innerHTML = '';
     [...players]
       .sort((a, b) => b.score - a.score)
       .forEach((p) => {
         const li = document.createElement('li');
+        if (p.connected === false) li.classList.add('disconnected');
         const left = document.createElement('span');
         left.className = 'roster-left';
         left.appendChild(renderPlayerBadge(p));
