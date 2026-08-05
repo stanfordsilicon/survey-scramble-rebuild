@@ -38,6 +38,17 @@
   const usernameInput = document.getElementById('input-username');
   const roomCodeInput = document.getElementById('input-room-code');
   const loginError = document.getElementById('login-error');
+  const loginInviteHint = document.getElementById('login-invite-hint');
+
+  // A link copied via "Copy Invite Link" lands here as ?room=CODE — prefill
+  // the code so the invitee only has to type a name and hit Join.
+  const invitedRoomCode = new URLSearchParams(window.location.search).get('room');
+  if (invitedRoomCode) {
+    roomCodeInput.value = invitedRoomCode.trim().toUpperCase();
+    loginInviteHint.textContent = `You've been invited to room ${roomCodeInput.value} — enter a name and join!`;
+    loginInviteHint.classList.remove('hidden');
+    usernameInput.focus();
+  }
 
   document.getElementById('btn-create-room').addEventListener('click', () => {
     loginError.classList.add('hidden');
@@ -76,19 +87,64 @@
     list.innerHTML = '';
     room.players.forEach((p) => {
       const li = document.createElement('li');
-      li.textContent = p.username + (p.id === room.hostId ? ' (host)' : '');
+      const left = document.createElement('span');
+      left.className = 'roster-left';
+      left.appendChild(renderPlayerBadge(p));
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = p.username + (p.id === room.hostId ? ' (host)' : '');
+      left.appendChild(name);
+
+      const readyBadge = document.createElement('span');
+      readyBadge.className = 'ready-badge ' + (p.ready ? 'is-ready' : 'is-waiting');
+      readyBadge.textContent = p.ready ? '✅ Ready' : '⏳ Waiting';
+
+      li.appendChild(left);
+      li.appendChild(readyBadge);
       list.appendChild(li);
     });
 
     const isHost = room.hostId === myId;
-    document.getElementById('btn-start-game').classList.toggle('hidden', !isHost);
-    document.getElementById('lobby-waiting').classList.toggle('hidden', isHost);
+    const me = room.players.find((p) => p.id === myId);
+    const allReady = room.players.length > 0 && room.players.every((p) => p.ready);
+
+    const readyBtn = document.getElementById('btn-toggle-ready');
+    readyBtn.textContent = me && me.ready ? 'Cancel Ready' : '✅ Ready Up';
+
+    const startBtn = document.getElementById('btn-start-game');
+    startBtn.classList.toggle('hidden', !isHost);
+    startBtn.disabled = !allReady;
+
+    const waiting = document.getElementById('lobby-waiting');
+    if (allReady) {
+      waiting.textContent = isHost ? 'Everyone is ready — start when you are!' : 'Waiting for the host to start the game…';
+    } else {
+      waiting.textContent = 'Waiting for everyone to be ready…';
+    }
   }
+
+  document.getElementById('btn-toggle-ready').addEventListener('click', () => {
+    const me = room.players.find((p) => p.id === myId);
+    const nextReady = !(me && me.ready);
+    socket.emit('set_ready', { ready: nextReady }, (res) => {
+      if (!res.ok) toast(res.error);
+    });
+  });
 
   document.getElementById('btn-start-game').addEventListener('click', () => {
     socket.emit('start_game', {}, (res) => {
       if (!res.ok) toast(res.error);
     });
+  });
+
+  document.getElementById('btn-copy-code').addEventListener('click', async () => {
+    const url = `${window.location.origin}${window.location.pathname}?room=${room.roomCode}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast('Invite link copied!');
+    } catch (e) {
+      toast(url);
+    }
   });
 
   // ---------- SHARED: room_update (lobby roster / leaderboard changes) ----------
@@ -135,16 +191,11 @@
         guessFeedback.textContent = `✅ "${outcome.keyword}" — +${outcome.points} points!`;
         guessFeedback.className = 'guess-feedback correct';
         guessInput.value = '';
-        // Reflected locally only — every player fills in their own board, so
-        // nobody else's screen changes when this guess lands.
-        room.round.revealed[outcome.keyword] = { rankIndex: outcome.rankIndex, points: outcome.points };
-        const me = room.players.find((p) => p.id === myId);
-        if (me) me.score = outcome.scoreTotal;
-        renderAnswerBoard(document.getElementById('answer-board'), room.round, false);
-        renderLeaderboard(document.getElementById('game-leaderboard'), room.players);
-        renderMyScore();
+        // The board itself updates from the room-wide guess_correct broadcast
+        // (which also reaches this tab), so nothing to render here directly.
       } else if (outcome.result === 'already-revealed') {
-        guessFeedback.textContent = `You already guessed "${outcome.keyword}".`;
+        const who = outcome.revealedBy ? outcome.revealedBy.username : 'someone';
+        guessFeedback.textContent = `${who} already guessed "${outcome.keyword}".`;
         guessFeedback.className = 'guess-feedback info';
       } else if (outcome.result === 'no-match') {
         guessFeedback.textContent = `Not in the top 10. Try again!`;
@@ -153,15 +204,15 @@
     });
   });
 
-  // Shared scoreboard only — other players' guesses never touch this
-  // client's own answer board.
-  socket.on('score_update', ({ players }) => {
-    if (!room) return;
+  // Shared board — a correct guess from any player reveals the keyword (and
+  // who got it) for the whole room, and takes it off the table for everyone.
+  socket.on('guess_correct', ({ rankIndex, keyword, points, revealedBy, players }) => {
+    if (!room || !room.round) return;
+    room.round.revealed[keyword] = { rankIndex, points, revealedBy };
     room.players = players;
-    if (screens.game.classList.contains('active')) {
-      renderLeaderboard(document.getElementById('game-leaderboard'), room.players);
-      renderMyScore();
-    }
+    renderAnswerBoard(document.getElementById('answer-board'), room.round, false);
+    renderLeaderboard(document.getElementById('game-leaderboard'), room.players);
+    renderMyScore();
   });
 
   function renderMyScore() {
@@ -228,18 +279,32 @@
   });
 
   // ---------- SHARED RENDER HELPERS ----------
+  function renderPlayerBadge(player) {
+    const badge = document.createElement('span');
+    badge.className = 'player-badge';
+    badge.style.backgroundColor = player.color || '#999';
+    badge.textContent = (player.username || '?').trim().charAt(0).toUpperCase() || '?';
+    badge.title = player.username;
+    return badge;
+  }
+
   function renderLeaderboard(listEl, players) {
     listEl.innerHTML = '';
     [...players]
       .sort((a, b) => b.score - a.score)
       .forEach((p) => {
         const li = document.createElement('li');
+        const left = document.createElement('span');
+        left.className = 'roster-left';
+        left.appendChild(renderPlayerBadge(p));
         const name = document.createElement('span');
+        name.className = 'name';
         name.textContent = p.username + (p.id === myId ? ' (you)' : '');
+        left.appendChild(name);
         const score = document.createElement('span');
         score.className = 'score';
         score.textContent = p.score;
-        li.appendChild(name);
+        li.appendChild(left);
         li.appendChild(score);
         listEl.appendChild(li);
       });
@@ -259,6 +324,7 @@
       rankBadge.className = 'rank';
       rankBadge.textContent = rank + 1;
       const label = document.createElement('span');
+      label.className = 'answer-label';
 
       const entry = revealedByRank[rank];
       if (entry) {
@@ -273,6 +339,9 @@
 
       slot.appendChild(rankBadge);
       slot.appendChild(label);
+      if (entry && entry.revealedBy) {
+        slot.appendChild(renderPlayerBadge(entry.revealedBy));
+      }
       boardEl.appendChild(slot);
     }
   }

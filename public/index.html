@@ -32,6 +32,7 @@
     <button id="btn-join-room" class="btn btn-secondary">Join Room</button>
 
     <p id="login-error" class="error-text hidden"></p>
+    <p id="login-invite-hint" class="hint hidden"></p>
   </div>
 </section>
 
@@ -41,12 +42,14 @@
     <h2>Room Code</h2>
     <div id="lobby-room-code" class="room-code">ABCD</div>
     <p class="hint">Share this code with friends so they can join.</p>
+    <button id="btn-copy-code" class="btn btn-secondary">📋 Copy Invite Link</button>
 
     <h3>Players</h3>
     <ul id="lobby-player-list" class="player-list"></ul>
 
-    <button id="btn-start-game" class="btn btn-primary hidden">Start Game</button>
-    <p id="lobby-waiting" class="hint">Waiting for the host to start the game…</p>
+    <button id="btn-toggle-ready" class="btn btn-secondary">Ready Up</button>
+    <button id="btn-start-game" class="btn btn-primary hidden" disabled>Start Game</button>
+    <p id="lobby-waiting" class="hint">Waiting for everyone to be ready…</p>
   </div>
 </section>
 
@@ -60,7 +63,6 @@
 
   <div class="emoji-display" id="game-emoji">🤔</div>
 
-  <h3 class="board-label">Your Board</h3>
   <div id="answer-board" class="answer-board"></div>
 
   <form id="guess-form" class="guess-form">
@@ -81,7 +83,6 @@
     <h2 id="scoring-title">Round Results</h2>
     <div class="scoring-emoji" id="scoring-emoji">🤔</div>
 
-    <h3 class="board-label">Your Board</h3>
     <div id="scoring-answer-board" class="answer-board"></div>
 
     <h3>Leaderboard</h3>

@@ -15,6 +15,10 @@ const ROUND_SECONDS = 30;
 const MAX_PLAYERS = 8;
 const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I/O/0/1 — avoids look-alike mixups
 
+// Assigned to players in join order so each one gets a stable badge color
+// that never shifts when the leaderboard re-sorts by score.
+const PLAYER_COLORS = ['#FF5C8A', '#4B3F72', '#35B06D', '#FFD166', '#3AA6FF', '#FF8C42', '#9B5DE5', '#00BBF9'];
+
 function normalizeGuess(text) {
   return String(text || '').trim().toLowerCase();
 }
@@ -45,9 +49,9 @@ function pickRoundBoards() {
     boardIndex,
     emoji: EMOJI_BOARDS[boardIndex].emoji,
     keywords: EMOJI_BOARDS[boardIndex].keywords,
-    // Keyed by playerId — each player fills in their own board independently,
-    // so one player's guesses never reveal words on anyone else's screen.
-    revealedByPlayer: {},
+    // Shared across the whole room — once any player reveals a keyword it's
+    // off-limits for everyone else, so this is keyed by keyword, not player.
+    revealed: {},
     startedAt: null,
     endsAt: null,
   }));
@@ -59,6 +63,17 @@ function err(code, message) {
   return e;
 }
 
+function makePlayer(id, username, colorIndex) {
+  return {
+    id,
+    username,
+    score: 0,
+    connected: true,
+    ready: false,
+    color: PLAYER_COLORS[colorIndex % PLAYER_COLORS.length],
+  };
+}
+
 async function createRoom(hostId, username) {
   const roomCode = await generateUniqueRoomCode();
   const room = {
@@ -66,7 +81,7 @@ async function createRoom(hostId, username) {
     hostId,
     state: 'lobby', // lobby | playing | roundEnd | final
     players: {
-      [hostId]: { id: hostId, username, score: 0, connected: true },
+      [hostId]: makePlayer(hostId, username, 0),
     },
     playerOrder: [hostId],
     totalRounds: TOTAL_ROUNDS,
@@ -85,7 +100,7 @@ async function joinRoom(roomCode, playerId, username) {
   if (room.state !== 'lobby') throw err('GAME_IN_PROGRESS', 'That game has already started.');
   if (room.playerOrder.length >= MAX_PLAYERS) throw err('ROOM_FULL', 'That room is full.');
 
-  room.players[playerId] = { id: playerId, username, score: 0, connected: true };
+  room.players[playerId] = makePlayer(playerId, username, room.playerOrder.length);
   room.playerOrder.push(playerId);
   await store.saveRoom(room);
   return room;
@@ -95,12 +110,26 @@ async function getRoom(roomCode) {
   return store.getRoom(roomCode);
 }
 
+async function setReady(roomCode, playerId, ready) {
+  const room = await store.getRoom(roomCode);
+  if (!room) throw err('ROOM_NOT_FOUND', 'That room code does not exist.');
+  if (room.state !== 'lobby') throw err('GAME_IN_PROGRESS', 'That game has already started.');
+  const player = room.players[playerId];
+  if (!player) throw err('NOT_IN_ROOM', 'You are not in this room.');
+
+  player.ready = !!ready;
+  await store.saveRoom(room);
+  return room;
+}
+
 async function startGame(roomCode, requesterId) {
   const room = await store.getRoom(roomCode);
   if (!room) throw err('ROOM_NOT_FOUND', 'That room code does not exist.');
   if (room.hostId !== requesterId) throw err('NOT_HOST', 'Only the host can start the game.');
   if (room.state !== 'lobby') throw err('GAME_IN_PROGRESS', 'The game has already started.');
   if (room.playerOrder.length < 1) throw err('NOT_ENOUGH_PLAYERS', 'Need at least one player.');
+  const allReady = room.playerOrder.every((id) => room.players[id] && room.players[id].ready);
+  if (!allReady) throw err('NOT_ALL_READY', 'Everyone needs to be ready before starting.');
 
   room.rounds = pickRoundBoards();
   room.roundIndex = 0;
@@ -124,9 +153,9 @@ async function submitGuess(roomCode, playerId, guessText) {
   const guess = normalizeGuess(guessText);
   if (!guess) return { result: 'empty' };
 
-  const myRevealed = round.revealedByPlayer[playerId] || (round.revealedByPlayer[playerId] = {});
-  if (myRevealed[guess]) {
-    return { result: 'already-revealed', keyword: guess };
+  const existing = round.revealed[guess];
+  if (existing) {
+    return { result: 'already-revealed', keyword: guess, revealedBy: existing.revealedBy };
   }
 
   const rankIndex = round.keywords.findIndex((k) => k.toLowerCase() === guess);
@@ -135,7 +164,8 @@ async function submitGuess(roomCode, playerId, guessText) {
   }
 
   const points = pointsForRank(rankIndex);
-  myRevealed[guess] = { rankIndex, points };
+  const revealedBy = { id: player.id, username: player.username, color: player.color };
+  round.revealed[guess] = { rankIndex, points, revealedBy };
   player.score += points;
 
   await store.saveRoom(room);
@@ -145,6 +175,7 @@ async function submitGuess(roomCode, playerId, guessText) {
     rankIndex,
     points,
     scoreTotal: player.score,
+    revealedBy,
   };
 }
 
@@ -152,7 +183,7 @@ function buildLeaderboard(room) {
   return room.playerOrder
     .map((id) => room.players[id])
     .filter(Boolean)
-    .map((p) => ({ id: p.id, username: p.username, score: p.score, connected: p.connected }))
+    .map((p) => ({ id: p.id, username: p.username, score: p.score, connected: p.connected, ready: p.ready, color: p.color }))
     .sort((a, b) => b.score - a.score);
 }
 
@@ -207,18 +238,17 @@ async function leaveRoom(roomCode, playerId) {
   return room;
 }
 
-// Shapes a room for a specific player: strips the current round's answer key
-// so it can't be read out of the network payload while still live, and scopes
-// `revealed` to that player's own board only — other players' guesses never
-// appear here, since everyone plays the same emoji on an independent board.
-function toClientView(room, forPlayerId) {
+// Shapes a room for the wire. The board is shared, so every player in the
+// room receives the identical view — only the current round's answer key is
+// withheld while it's still live, so it can't be read out of the payload.
+function toClientView(room) {
   const currentRound = room.roundIndex >= 0 ? room.rounds[room.roundIndex] : null;
   const roundView = currentRound
     ? {
         roundNumber: room.roundIndex + 1,
         emoji: currentRound.emoji,
         endsAt: currentRound.endsAt,
-        revealed: currentRound.revealedByPlayer[forPlayerId] || {},
+        revealed: currentRound.revealed,
         ...(room.state !== 'playing' ? { keywords: currentRound.keywords } : {}),
       }
     : null;
@@ -240,6 +270,7 @@ module.exports = {
   createRoom,
   joinRoom,
   getRoom,
+  setReady,
   startGame,
   submitGuess,
   endRound,

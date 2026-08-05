@@ -32,23 +32,17 @@ function scheduleRoundEnd(roomCode, endsAt) {
   roundTimers.set(roomCode, handle);
 }
 
-// Every player plays the same emoji on their own independent board, so the
-// room view is tailored per-socket (each player's `round.revealed` only ever
-// contains their own guesses) rather than broadcast as one shared payload.
-async function emitRoomView(roomCode, eventName) {
-  const room = await rooms.getRoom(roomCode);
-  if (!room) return;
-  const socketsInRoom = await io.in(roomCode).fetchSockets();
-  for (const sock of socketsInRoom) {
-    sock.emit(eventName, rooms.toClientView(room, sock.id));
-  }
+// The board is shared, so every player in the room gets the identical view —
+// a single room-wide broadcast is all that's needed.
+function broadcastRoom(roomCode, room, eventName = 'room_update') {
+  io.to(roomCode).emit(eventName, rooms.toClientView(room));
 }
 
 async function finishRound(roomCode) {
   clearRoundTimer(roomCode);
   const room = await rooms.endRound(roomCode);
   if (!room) return;
-  await emitRoomView(roomCode, 'round_ended');
+  broadcastRoom(roomCode, room, 'round_ended');
 }
 
 io.on('connection', (socket) => {
@@ -59,8 +53,8 @@ io.on('connection', (socket) => {
       socket.join(room.roomCode);
       socket.data.roomCode = room.roomCode;
       socket.data.username = name;
-      cb && cb({ ok: true, room: rooms.toClientView(room, socket.id) });
-      await emitRoomView(room.roomCode, 'room_update');
+      cb && cb({ ok: true, room: rooms.toClientView(room) });
+      broadcastRoom(room.roomCode, room);
     } catch (e) {
       cb && cb({ ok: false, error: e.message });
     }
@@ -74,8 +68,19 @@ io.on('connection', (socket) => {
       socket.join(code);
       socket.data.roomCode = code;
       socket.data.username = name;
-      cb && cb({ ok: true, room: rooms.toClientView(room, socket.id) });
-      await emitRoomView(code, 'room_update');
+      cb && cb({ ok: true, room: rooms.toClientView(room) });
+      broadcastRoom(code, room);
+    } catch (e) {
+      cb && cb({ ok: false, error: e.message });
+    }
+  });
+
+  socket.on('set_ready', async ({ ready } = {}, cb) => {
+    try {
+      const roomCode = socket.data.roomCode;
+      const room = await rooms.setReady(roomCode, socket.id, !!ready);
+      cb && cb({ ok: true });
+      broadcastRoom(roomCode, room);
     } catch (e) {
       cb && cb({ ok: false, error: e.message });
     }
@@ -88,7 +93,7 @@ io.on('connection', (socket) => {
       const round = room.rounds[room.roundIndex];
       scheduleRoundEnd(roomCode, round.endsAt);
       cb && cb({ ok: true });
-      await emitRoomView(roomCode, 'round_started');
+      broadcastRoom(roomCode, room, 'round_started');
     } catch (e) {
       cb && cb({ ok: false, error: e.message });
     }
@@ -100,10 +105,16 @@ io.on('connection', (socket) => {
       const outcome = await rooms.submitGuess(roomCode, socket.id, guess);
       cb && cb({ ok: true, outcome });
       if (outcome.result === 'correct') {
-        // Only the shared scoreboard goes to the rest of the room — the
-        // keyword/rank stay on the guesser's own board.
+        // Everyone shares one board — broadcast the reveal so it becomes
+        // off-limits on every player's screen, not just the guesser's.
         const room = await rooms.getRoom(roomCode);
-        io.to(roomCode).emit('score_update', { players: rooms.buildLeaderboard(room) });
+        io.to(roomCode).emit('guess_correct', {
+          rankIndex: outcome.rankIndex,
+          keyword: outcome.keyword,
+          points: outcome.points,
+          revealedBy: outcome.revealedBy,
+          players: rooms.buildLeaderboard(room),
+        });
       }
     } catch (e) {
       cb && cb({ ok: false, error: e.message });
@@ -117,7 +128,7 @@ io.on('connection', (socket) => {
       const round = room.rounds[room.roundIndex];
       scheduleRoundEnd(roomCode, round.endsAt);
       cb && cb({ ok: true });
-      await emitRoomView(roomCode, 'round_started');
+      broadcastRoom(roomCode, room, 'round_started');
     } catch (e) {
       cb && cb({ ok: false, error: e.message });
     }
@@ -139,7 +150,7 @@ io.on('connection', (socket) => {
     const room = await rooms.leaveRoom(roomCode, sock.id);
     sock.data.roomCode = null;
     if (room) {
-      await emitRoomView(roomCode, 'room_update');
+      broadcastRoom(roomCode, room);
     } else {
       clearRoundTimer(roomCode);
     }

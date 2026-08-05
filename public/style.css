@@ -101,6 +101,15 @@ body {
 
 .btn:active { transform: scale(0.98); }
 
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn:disabled:active { transform: none; }
+
+.btn + .btn { margin-top: 10px; }
+
 .btn-primary {
   background: var(--primary);
   color: white;
@@ -174,6 +183,42 @@ body {
 .leaderboard li .score { color: var(--primary-dark); }
 .leaderboard li:first-child { background: linear-gradient(90deg, #fff3d6, #ffe6b3); }
 
+.roster-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.roster-left .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-badge {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  border-radius: 50%;
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ready-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.ready-badge.is-ready { color: var(--correct); }
+.ready-badge.is-waiting { color: var(--text-muted); }
+
 /* GAME SCREEN */
 #screen-game.active {
   display: grid;
@@ -194,14 +239,6 @@ body {
 }
 
 .round-badge { color: var(--secondary); }
-
-.board-label {
-  margin: 0 4px;
-  color: rgba(255, 255, 255, 0.85);
-  font-size: 0.85rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
 
 .timer {
   font-size: 1.6rem;
@@ -273,6 +310,9 @@ body {
   background: #fdeeee;
   color: #c62b4e;
 }
+
+.answer-slot .answer-label { flex: 1; }
+.answer-slot .player-badge { margin-left: auto; }
 
 .guess-form {
   display: flex;
