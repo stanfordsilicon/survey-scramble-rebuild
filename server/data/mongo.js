@@ -45,6 +45,11 @@ async function connectMongo() {
         .createIndexes([{ key: { roomCode: 1 } }, { key: { gameStartedAt: -1 } }])
         .catch((e) => console.error('[mongo] Index creation failed:', e.message));
 
+      // Unique per username since that's the upsert key in recordPlayerResults.
+      db.collection('players')
+        .createIndexes([{ key: { username: 1 }, unique: true }])
+        .catch((e) => console.error('[mongo] Player index creation failed:', e.message));
+
       return db;
     } catch (e) {
       console.error('[mongo] Connection failed — analytics disabled:', e.message);
@@ -63,4 +68,32 @@ function getDb() {
   return db;
 }
 
-module.exports = { connectMongo, getDb };
+// Rolling per-player stats across every game ever played, keyed by username
+// (mirrors the `players` collection pattern from the emoji-munchers project:
+// bestScore / gamesPlayed / lastPlayedAt / totalScore, upserted once per
+// player each time a game session finishes). This is a derived summary, not
+// the source of truth — gamesessions holds the full per-round/per-guess
+// detail this is aggregated from.
+async function recordPlayerResults(players) {
+  if (!db || !players || !players.length) return;
+  const collection = db.collection('players');
+  const now = new Date();
+
+  await Promise.all(
+    players.map((p) =>
+      collection
+        .updateOne(
+          { username: p.username },
+          {
+            $inc: { gamesPlayed: 1, totalScore: p.finalScore },
+            $max: { bestScore: p.finalScore },
+            $set: { lastPlayedAt: now },
+          },
+          { upsert: true }
+        )
+        .catch((e) => console.error(`[mongo] Failed to update player stats for "${p.username}":`, e.message))
+    )
+  );
+}
+
+module.exports = { connectMongo, getDb, recordPlayerResults };

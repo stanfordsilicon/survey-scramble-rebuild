@@ -3,7 +3,7 @@ const http = require('http');
 const express = require('express');
 const { Server } = require('socket.io');
 const rooms = require('./game/roomManager');
-const { connectMongo, getDb } = require('./data/mongo');
+const { connectMongo, getDb, recordPlayerResults } = require('./data/mongo');
 
 const PORT = process.env.PORT || 4333;
 
@@ -87,6 +87,7 @@ async function saveGameSessionAnalytics(room) {
     const record = rooms.buildGameSessionRecord(room);
     await db.collection('gamesessions').insertOne(record);
     console.log(`[mongo] Saved game session for room ${room.roomCode}`);
+    await recordPlayerResults(record.players);
   } catch (e) {
     console.error('[mongo] Failed to save game session:', e.message);
   }
