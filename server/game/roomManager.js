@@ -50,13 +50,18 @@ function pickRoundBoards() {
     const j = Math.floor(Math.random() * (i + 1));
     [indices[i], indices[j]] = [indices[j], indices[i]];
   }
-  return indices.slice(0, TOTAL_ROUNDS).map((boardIndex) => ({
+  return indices.slice(0, TOTAL_ROUNDS).map((boardIndex, i) => ({
+    roundNumber: i + 1,
     boardIndex,
     emoji: EMOJI_BOARDS[boardIndex].emoji,
     keywords: EMOJI_BOARDS[boardIndex].keywords,
     // Shared across the whole room — once any player reveals a keyword it's
     // off-limits for everyone else, so this is keyed by keyword, not player.
     revealed: {},
+    // Every guess attempt (correct, wrong, or a repeat of an already-revealed
+    // word) gets logged here — this is the raw feed the analytics record in
+    // buildGameSessionRecord() is built from.
+    guesses: [],
     startedAt: null,
     endsAt: null,
   }));
@@ -219,13 +224,29 @@ async function submitGuess(roomCode, playerId, guessText) {
   const guess = normalizeGuess(guessText);
   if (!guess) return { result: 'empty' };
 
+  const now = Date.now();
+  const logEntry = {
+    playerId,
+    username: player.username,
+    guessText: String(guessText),
+    normalizedGuess: guess,
+    timestamp: now,
+    // "Decision time" / time-to-this-action, measured from when the round
+    // (the prompt) started.
+    msSinceRoundStart: round.startedAt ? now - round.startedAt : null,
+  };
+
   const existing = round.revealed[guess];
   if (existing) {
+    round.guesses.push({ ...logEntry, result: 'already-revealed' });
+    await store.saveRoom(room);
     return { result: 'already-revealed', keyword: guess, revealedBy: existing.revealedBy };
   }
 
   const rankIndex = round.keywords.findIndex((k) => k.toLowerCase() === guess);
   if (rankIndex === -1) {
+    round.guesses.push({ ...logEntry, result: 'no-match' });
+    await store.saveRoom(room);
     return { result: 'no-match' };
   }
 
@@ -233,6 +254,7 @@ async function submitGuess(roomCode, playerId, guessText) {
   const revealedBy = { id: player.id, username: player.username, color: player.color };
   round.revealed[guess] = { rankIndex, points, revealedBy };
   player.score += points;
+  round.guesses.push({ ...logEntry, result: 'correct', rankIndex, points });
 
   await store.saveRoom(room);
   return {
@@ -341,6 +363,70 @@ function toClientView(room) {
   };
 }
 
+// Shapes a completed game (lobby -> N rounds -> final) into the document
+// written to the `gamesessions` collection for analysis. Pure data shaping —
+// no MongoDB/driver code here, so this stays testable and swappable the same
+// way ./store.js keeps live room storage separate from game rules.
+function buildGameSessionRecord(room) {
+  const playedRounds = room.rounds.filter((r) => r.startedAt);
+  const gameStartedAt = playedRounds.length ? playedRounds[0].startedAt : room.createdAt;
+  const lastRound = playedRounds[playedRounds.length - 1];
+  const gameEndedAt = lastRound ? lastRound.endsAt : Date.now();
+
+  const rounds = playedRounds.map((round) => {
+    const playerIds = [...new Set(round.guesses.map((g) => g.playerId))];
+    const playerTiming = playerIds.map((playerId) => {
+      const guesses = round.guesses
+        .filter((g) => g.playerId === playerId)
+        .sort((a, b) => a.timestamp - b.timestamp);
+      const firstCorrect = guesses.find((g) => g.result === 'correct');
+      return {
+        playerId,
+        username: guesses[0] ? guesses[0].username : (room.players[playerId] || {}).username,
+        timeToFirstInputMs: guesses.length ? guesses[0].msSinceRoundStart : null,
+        timeToCorrectAnswerMs: firstCorrect ? firstCorrect.msSinceRoundStart : null,
+      };
+    });
+
+    return {
+      roundNumber: round.roundNumber,
+      emoji: round.emoji,
+      keywords: round.keywords,
+      roundStartedAt: new Date(round.startedAt),
+      roundEndedAt: round.endsAt ? new Date(round.endsAt) : null,
+      guesses: round.guesses.map((g) => ({
+        playerId: g.playerId,
+        username: g.username,
+        guessText: g.guessText,
+        normalizedGuess: g.normalizedGuess,
+        timestamp: new Date(g.timestamp),
+        msSinceRoundStart: g.msSinceRoundStart,
+        result: g.result,
+        rankIndex: g.rankIndex ?? null,
+        points: g.points ?? null,
+      })),
+      playerTiming,
+    };
+  });
+
+  const finalPlayers = room.finalLeaderboard || buildLeaderboard(room);
+
+  return {
+    game: 'Survey Scramble',
+    roomCode: room.roomCode,
+    language: 'en',
+    gameStartedAt: new Date(gameStartedAt),
+    gameEndedAt: new Date(gameEndedAt),
+    totalDurationMs: gameEndedAt - gameStartedAt,
+    players: finalPlayers.map((p) => ({
+      playerId: p.id,
+      username: p.username,
+      finalScore: p.score,
+    })),
+    rounds,
+  };
+}
+
 module.exports = {
   TOTAL_ROUNDS,
   ROUND_SECONDS,
@@ -357,5 +443,6 @@ module.exports = {
   nextRound,
   leaveRoom,
   buildLeaderboard,
+  buildGameSessionRecord,
   toClientView,
 };

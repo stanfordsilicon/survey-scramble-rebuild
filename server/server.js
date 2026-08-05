@@ -3,6 +3,7 @@ const http = require('http');
 const express = require('express');
 const { Server } = require('socket.io');
 const rooms = require('./game/roomManager');
+const { connectMongo, getDb } = require('./data/mongo');
 
 const PORT = process.env.PORT || 4333;
 
@@ -77,12 +78,29 @@ function broadcastRoom(roomCode, room, eventName = 'room_update') {
   io.to(roomCode).emit(eventName, rooms.toClientView(room));
 }
 
+// Best-effort — a slow or unreachable database should never affect
+// gameplay, so this is fire-and-forget and swallows its own errors.
+async function saveGameSessionAnalytics(room) {
+  const db = getDb();
+  if (!db) return;
+  try {
+    const record = rooms.buildGameSessionRecord(room);
+    await db.collection('gamesessions').insertOne(record);
+    console.log(`[mongo] Saved game session for room ${room.roomCode}`);
+  } catch (e) {
+    console.error('[mongo] Failed to save game session:', e.message);
+  }
+}
+
 async function finishRound(roomCode) {
   clearRoundTimer(roomCode);
   try {
     const room = await rooms.endRound(roomCode);
     if (!room) return;
     broadcastRoom(roomCode, room, 'round_ended');
+    if (room.state === 'final') {
+      saveGameSessionAnalytics(room);
+    }
   } catch (e) {
     console.error('Error ending round:', e);
   }
@@ -256,6 +274,8 @@ process.on('unhandledRejection', (reason) => {
 process.on('uncaughtException', (err) => {
   console.error('Uncaught exception:', err);
 });
+
+connectMongo(); // fire-and-forget — gameplay works fine before/without this resolving
 
 server.listen(PORT, () => {
   console.log(`Emoji Survey Scramble listening on http://localhost:${PORT}`);
