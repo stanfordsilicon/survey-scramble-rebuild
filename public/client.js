@@ -1,9 +1,28 @@
 (() => {
-  const socket = io();
+  // No more persistent Socket.IO connection -- every action is a plain HTTP
+  // request, and room updates arrive via polling instead of a push
+  // broadcast. See server/app.js's top comment for why (Vercel serverless
+  // has no long-lived process to hold a WebSocket open, and no shared
+  // memory between invocations to broadcast from anyway).
+  async function api(action, payload) {
+    const body = Object.assign({}, payload);
+    body.playerId = myId;
+    if (room && !body.roomCode) body.roomCode = room.roomCode;
+    try {
+      const res = await fetch(`/api/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      return await res.json();
+    } catch (e) {
+      return { ok: false, error: 'Connection error — please try again.' };
+    }
+  }
 
-  // Player identity is a persistent id kept in sessionStorage (not the
-  // socket id) — a page refresh gets a brand new socket connection but keeps
-  // the same device id, which is what lets rejoin_room put you right back
+  // Player identity is a persistent id kept in sessionStorage (not a
+  // connection id) — a page refresh gets a brand new HTTP session but keeps
+  // the same device id, which is what lets rejoin-room put you right back
   // where you were instead of bouncing you to the login screen.
   //
   // sessionStorage rather than localStorage is deliberate: localStorage is
@@ -41,12 +60,14 @@
   }
 
   // The single source of truth for what this client currently knows about the
-  // room — always replaced wholesale from the server's room_update / round_*
-  // payloads rather than patched piecemeal, so the UI never drifts from the
-  // authoritative game state.
+  // room — always replaced wholesale from a poll/action response rather than
+  // patched piecemeal, so the UI never drifts from the authoritative game
+  // state returned by the server.
   let room = null;
   let timerInterval = null;
   let factoidInterval = null;
+  let pollTimer = null;
+  let heartbeatTimer = null;
 
   const screens = {
     login: document.getElementById('screen-login'),
@@ -70,6 +91,62 @@
     toast._t = setTimeout(() => el.classList.add('hidden'), 2600);
   }
 
+  // ---------- POLLING + PRESENCE ----------
+  // Replaces the old room_update/round_started/round_ended/guess_correct
+  // socket broadcasts. Every response is a full authoritative room
+  // snapshot, same shape those broadcasts always carried.
+  function startPolling() {
+    stopPolling();
+    pollTimer = setInterval(pollRoom, 1500);
+  }
+
+  function stopPolling() {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+
+  async function pollRoom() {
+    if (!room) return;
+    try {
+      const res = await fetch(`/api/room?code=${encodeURIComponent(room.roomCode)}`);
+      const data = await res.json();
+      if (data.ok && data.room) applyRoomSnapshot(data.room);
+    } catch (e) {
+      // transient network hiccup — the next tick retries
+    }
+  }
+
+  // Replaces Socket.IO's automatic disconnect detection — there's no
+  // persistent connection left for the server to notice drop, so presence
+  // is tracked with a periodic heartbeat instead (see roomManager.js on the
+  // server for how staleness actually gets detected).
+  function startHeartbeat() {
+    stopHeartbeat();
+    heartbeatTimer = setInterval(() => {
+      if (room) api('heartbeat', {});
+    }, 4000);
+  }
+
+  function stopHeartbeat() {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+
+  // Explicit "leaving right now" signal for the common case (closing the
+  // tab) — sendBeacon is used because a plain fetch can get cancelled
+  // mid-flight when the page unloads. The heartbeat timeout on the server
+  // is the fallback for real drops (crash, network loss) where this never
+  // fires.
+  window.addEventListener('pagehide', () => {
+    if (!room || !navigator.sendBeacon) return;
+    try {
+      const blob = new Blob([JSON.stringify({ roomCode: room.roomCode, playerId: myId })], { type: 'application/json' });
+      navigator.sendBeacon('/api/leave-room', blob);
+    } catch (e) {
+      // best-effort only
+    }
+  });
+
   // ---------- LOGIN ----------
   const usernameInput = document.getElementById('input-username');
   const roomCodeInput = document.getElementById('input-room-code');
@@ -86,32 +163,32 @@
     usernameInput.focus();
   }
 
+  // Common tail end of create/join/rejoin: remember the session, apply
+  // whatever state the room is actually in (lobby, mid-round, results —
+  // applyRoomSnapshot figures out which), and start keeping it fresh.
+  function enterRoom(updatedRoom, username) {
+    saveSession(updatedRoom.roomCode, username);
+    applyRoomSnapshot(updatedRoom);
+    startPolling();
+    startHeartbeat();
+  }
+
   document.getElementById('btn-create-room').addEventListener('click', () => {
     loginError.classList.add('hidden');
     const name = usernameInput.value;
-    socket.emit('create_room', { username: name, playerId: myId }, (res) => {
+    api('create-room', { username: name }).then((res) => {
       if (!res.ok) return showLoginError(res.error);
-      room = res.room;
-      saveSession(room.roomCode, name || usernameInput.value);
-      renderLobby();
-      showScreen('lobby');
+      enterRoom(res.room, name || usernameInput.value);
     });
   });
 
   document.getElementById('btn-join-room').addEventListener('click', () => {
     loginError.classList.add('hidden');
     const name = usernameInput.value;
-    socket.emit(
-      'join_room',
-      { username: name, roomCode: roomCodeInput.value, playerId: myId },
-      (res) => {
-        if (!res.ok) return showLoginError(res.error);
-        room = res.room;
-        saveSession(room.roomCode, name || usernameInput.value);
-        renderLobby();
-        showScreen('lobby');
-      }
-    );
+    api('join-room', { username: name, roomCode: roomCodeInput.value }).then((res) => {
+      if (!res.ok) return showLoginError(res.error);
+      enterRoom(res.room, name || usernameInput.value);
+    });
   });
 
   function showLoginError(msg) {
@@ -156,50 +233,30 @@
     // arcade player to reach this game, seed one under the party's code
     // instead of a random one (one code, sourced from the URL).
     usernameInput.value = me.name;
-    socket.emit('join_room', { username: me.name, roomCode: arcadeRoomCode, playerId: myId }, (res) => {
-      if (res.ok) {
-        room = res.room;
-        saveSession(room.roomCode, me.name);
-        renderLobby();
-        showScreen('lobby');
-        return;
-      }
-      socket.emit('create_room', { username: me.name, playerId: myId, code: arcadeRoomCode }, (res2) => {
-        if (!res2.ok) return; // arcade layer is an enhancement — leave the standalone login screen up
-        room = res2.room;
-        saveSession(room.roomCode, me.name);
-        renderLobby();
-        showScreen('lobby');
-      });
-    });
+    const res = await api('join-room', { username: me.name, roomCode: arcadeRoomCode });
+    if (res.ok) {
+      enterRoom(res.room, me.name);
+      return;
+    }
+    const res2 = await api('create-room', { username: me.name, code: arcadeRoomCode });
+    if (!res2.ok) return; // arcade layer is an enhancement — leave the standalone login screen up
+    enterRoom(res2.room, me.name);
   })();
 
   // ---------- REJOIN AFTER REFRESH ----------
-  // On connect (including the very first page load), try to resume whatever
-  // room this device was last in. If the room's gone, just fall back to login.
-  socket.on('connect', () => {
+  // On load, try to resume whatever room this device was last in. If the
+  // room's gone, just fall back to login.
+  (async function initSession() {
     const session = loadSession();
     if (!session || !session.roomCode) return;
-    socket.emit('rejoin_room', { roomCode: session.roomCode, playerId: myId, username: session.username }, (res) => {
-      if (!res.ok) {
-        clearSession();
-        return;
-      }
-      usernameInput.value = session.username || '';
-      room = res.room;
-      enterRoomAtCurrentState(room);
-    });
-  });
-
-  function enterRoomAtCurrentState(updatedRoom) {
-    if (updatedRoom.state === 'lobby') {
-      applyLobbyState(updatedRoom);
-    } else if (updatedRoom.state === 'playing') {
-      applyRoundStarted(updatedRoom);
-    } else {
-      applyRoundEnded(updatedRoom);
+    const res = await api('rejoin-room', { roomCode: session.roomCode, username: session.username });
+    if (!res.ok) {
+      clearSession();
+      return;
     }
-  }
+    usernameInput.value = session.username || '';
+    enterRoom(res.room, session.username);
+  })();
 
   // ---------- LOBBY ----------
   function renderPlayerBadge(player) {
@@ -267,14 +324,16 @@
   document.getElementById('btn-toggle-ready').addEventListener('click', () => {
     const me = room.players.find((p) => p.id === myId);
     const nextReady = !(me && me.ready);
-    socket.emit('set_ready', { ready: nextReady }, (res) => {
-      if (!res.ok) toast(res.error);
+    api('set-ready', { ready: nextReady }).then((res) => {
+      if (!res.ok) return toast(res.error);
+      applyRoomSnapshot(res.room);
     });
   });
 
   document.getElementById('btn-start-game').addEventListener('click', () => {
-    socket.emit('start_game', {}, (res) => {
-      if (!res.ok) toast(res.error);
+    api('start-game', {}).then((res) => {
+      if (!res.ok) return toast(res.error);
+      applyRoomSnapshot(res.room);
     });
   });
 
@@ -302,10 +361,11 @@
   }
 
   document.getElementById('btn-play-solo').addEventListener('click', () => {
-    socket.emit('set_ready', { ready: true }, (res) => {
+    api('set-ready', { ready: true }).then((res) => {
       if (!res.ok) return toast(res.error);
-      socket.emit('start_game', {}, (res2) => {
-        if (!res2.ok) toast(res2.error);
+      return api('start-game', {}).then((res2) => {
+        if (!res2.ok) return toast(res2.error);
+        applyRoomSnapshot(res2.room);
       });
     });
   });
@@ -337,18 +397,49 @@
     document.getElementById('lobby-solo-hint').classList.add('hidden');
   }
 
-  // ---------- SHARED: room_update (roster / ready / leaderboard changes, and play-again resets) ----------
-  socket.on('room_update', (updatedRoom) => {
-    room = updatedRoom;
-    if (room.state === 'lobby') {
-      renderLobby();
-      showScreen('lobby');
-    } else if (screens.game.classList.contains('active')) {
-      renderLeaderboard(document.getElementById('game-leaderboard'), room.players);
-    } else if (screens.scoring.classList.contains('active')) {
-      renderLeaderboard(document.getElementById('scoring-leaderboard'), room.players);
+  // ---------- ROOM SNAPSHOT DISPATCH ----------
+  // Every poll tick and every action response hands over a full room
+  // snapshot; this decides which screen it implies and whether it's a
+  // meaningfully new state (a fresh round, fresh results) or just the same
+  // one with a minor change (a reveal, a score, a roster update) so the
+  // game screen doesn't stomp on whatever the player is mid-typing.
+  function applyRoomSnapshot(updatedRoom) {
+    const prev = room;
+
+    if (updatedRoom.state === 'lobby') {
+      applyLobbyState(updatedRoom);
+      return;
     }
-  });
+
+    if (updatedRoom.state === 'playing') {
+      const isNewRound =
+        !prev || prev.state !== 'playing' || !prev.round || prev.round.roundNumber !== updatedRoom.round.roundNumber;
+      if (isNewRound) {
+        applyRoundStarted(updatedRoom);
+      } else {
+        room = updatedRoom;
+        renderAnswerBoard(document.getElementById('answer-board'), room.round, false);
+        renderLeaderboard(document.getElementById('game-leaderboard'), room.players);
+        renderMyScore();
+      }
+      return;
+    }
+
+    // roundEnd or final
+    const isNewResults =
+      !prev ||
+      prev.state === 'playing' ||
+      prev.state !== updatedRoom.state ||
+      (prev.round && updatedRoom.round && prev.round.roundNumber !== updatedRoom.round.roundNumber);
+    if (isNewResults) {
+      applyRoundEnded(updatedRoom);
+    } else {
+      room = updatedRoom;
+      if (screens.scoring.classList.contains('active')) {
+        renderLeaderboard(document.getElementById('scoring-leaderboard'), room.players);
+      }
+    }
+  }
 
   // ---------- GAME ----------
   const guessForm = document.getElementById('guess-form');
@@ -371,20 +462,31 @@
     startTimer(room.round.endsAt);
   }
 
-  socket.on('round_started', applyRoundStarted);
-
   guessForm.addEventListener('submit', (e) => {
     e.preventDefault();
     const guess = guessInput.value;
     if (!guess.trim()) return;
-    socket.emit('submit_guess', { guess }, (res) => {
+    api('submit-guess', { guess }).then((res) => {
       if (!res.ok) return toast(res.error);
       const outcome = res.outcome;
       if (outcome.result === 'correct') {
         guessFeedback.textContent = `✅ "${outcome.keyword}" — +${outcome.points} points!`;
         guessFeedback.className = 'guess-feedback correct';
-        // The board itself updates from the room-wide guess_correct broadcast
-        // (which also reaches this tab), so nothing to render here directly.
+        // Reflect the reveal (and my own new score) immediately instead of
+        // waiting for the next poll tick -- everyone else's screens pick up
+        // the same change on their next poll a moment later.
+        if (room && room.round) {
+          room.round.revealed[outcome.keyword] = {
+            rankIndex: outcome.rankIndex,
+            points: outcome.points,
+            revealedBy: outcome.revealedBy,
+          };
+          const me = room.players.find((p) => p.id === myId);
+          if (me) me.score = outcome.scoreTotal;
+          renderAnswerBoard(document.getElementById('answer-board'), room.round, false);
+          renderLeaderboard(document.getElementById('game-leaderboard'), room.players);
+          renderMyScore();
+        }
       } else if (outcome.result === 'already-revealed') {
         const who = outcome.revealedBy ? outcome.revealedBy.username : 'someone';
         guessFeedback.textContent = `${who} already guessed "${outcome.keyword}".`;
@@ -399,17 +501,6 @@
       guessInput.value = '';
       guessInput.focus();
     });
-  });
-
-  // Shared board — a correct guess from any player reveals the keyword (and
-  // who got it) for the whole room, and takes it off the table for everyone.
-  socket.on('guess_correct', ({ rankIndex, keyword, points, revealedBy, players }) => {
-    if (!room || !room.round) return;
-    room.round.revealed[keyword] = { rankIndex, points, revealedBy };
-    room.players = players;
-    renderAnswerBoard(document.getElementById('answer-board'), room.round, false);
-    renderLeaderboard(document.getElementById('game-leaderboard'), room.players);
-    renderMyScore();
   });
 
   function renderMyScore() {
@@ -455,11 +546,10 @@
     showScreen('scoring');
   }
 
-  socket.on('round_ended', applyRoundEnded);
-
   document.getElementById('btn-next-round').addEventListener('click', () => {
-    socket.emit('next_round', {}, (res) => {
-      if (!res.ok) toast(res.error);
+    api('next-round', {}).then((res) => {
+      if (!res.ok) return toast(res.error);
+      applyRoomSnapshot(res.room);
     });
   });
 
@@ -503,13 +593,16 @@
   }
 
   document.getElementById('btn-play-again').addEventListener('click', () => {
-    socket.emit('play_again', {}, (res) => {
-      if (!res.ok) toast(res.error);
+    api('play-again', {}).then((res) => {
+      if (!res.ok) return toast(res.error);
+      applyRoomSnapshot(res.room);
     });
   });
 
   document.getElementById('btn-go-home').addEventListener('click', () => {
-    socket.emit('leave_room', {}, () => {
+    api('leave-room', {}).then(() => {
+      stopPolling();
+      stopHeartbeat();
       clearSession();
       room = null;
       showScreen('login');
@@ -577,6 +670,4 @@
       boardEl.appendChild(slot);
     }
   }
-
-  socket.on('connect_error', () => toast('Connection error — retrying…'));
 })();

@@ -1,16 +1,18 @@
 // Core game rules for Emoji Survey Scramble.
 //
-// This module is deliberately free of any Socket.io / networking knowledge —
+// This module is deliberately free of any networking/transport knowledge —
 // it only reads and writes plain JSON-shaped "room" objects via ./store.js.
-// server.js is responsible for wiring these functions to socket events and
-// for round/reconnect timers. Keeping the split this way means the
-// persistence layer (store.js) and the transport layer (server.js) can each
-// be swapped out independently of the rules below.
+// server/app.js is responsible for wiring these functions to HTTP routes.
+// Round timeouts and stale disconnects are resolved lazily (see
+// applyLazyStateUpdates) rather than via a live timer, since there's no
+// persistent process to hold one across requests. Keeping the split this way
+// means the persistence layer (store.js) and the transport layer (app.js)
+// can each be swapped out independently of the rules below.
 //
 // Player identity is a client-generated id (persisted in the browser's
-// localStorage), NOT the Socket.io socket id — a refresh gets a new socket
-// but keeps the same player id, which is what makes rejoin-after-refresh,
-// play-again, and the frozen final leaderboard all work.
+// sessionStorage), NOT a socket/connection id — a refresh gets a fresh HTTP
+// session but keeps the same player id, which is what makes
+// rejoin-after-refresh, play-again, and the frozen final leaderboard all work.
 
 const { EMOJI_BOARDS, pointsForRank } = require('../data/emojiData');
 const store = require('./store');
@@ -19,6 +21,17 @@ const TOTAL_ROUNDS = 3;
 const ROUND_SECONDS = 30;
 const MAX_PLAYERS = 8;
 const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I/O/0/1 — avoids look-alike mixups
+
+// How long a disconnected player's seat stays warm before they're actually
+// removed from the room — long enough to survive a page refresh or a closed
+// tab right after the final results, without leaving stale seats forever.
+const DISCONNECT_GRACE_MS = 5 * 60 * 1000;
+
+// A player is considered disconnected once their heartbeat goes quiet for
+// this long — comfortably above the client's ~4s heartbeat interval so a
+// couple of missed beats (a slow network tick, a backgrounded tab) don't
+// falsely flag someone as gone.
+const HEARTBEAT_TIMEOUT_MS = 15 * 1000;
 
 // Assigned to players in join order so each one gets a stable badge color
 // that never shifts when the leaderboard re-sorts by score.
@@ -81,7 +94,87 @@ function makePlayer(id, username, colorIndex) {
     connected: true,
     ready: false,
     color: PLAYER_COLORS[colorIndex % PLAYER_COLORS.length],
+    lastSeenAt: Date.now(),
+    disconnectedAt: null,
   };
+}
+
+function reassignHostIfNeeded(room, departingId) {
+  if (room.hostId !== departingId) return;
+  room.hostId =
+    room.playerOrder.find((id) => id !== departingId && room.players[id] && room.players[id].connected) ||
+    room.hostId;
+}
+
+// Round-timeouts and stale disconnects used to be resolved by live
+// setTimeout handles kept in server.js's process memory -- those can't
+// survive across serverless invocations (each request may land on a
+// different, isolated instance), so instead every room load "catches up"
+// any state that should have already changed by wall-clock time. Mutates
+// `room` in place; returns true if anything changed, so the caller knows
+// whether to persist it.
+function applyLazyStateUpdates(room) {
+  let changed = false;
+  const now = Date.now();
+
+  // 1. The round clock ran out with nobody around (or fast enough) to
+  // trigger the next step directly -- advance it exactly like a live round
+  // timer used to.
+  if (room.state === 'playing') {
+    const round = room.rounds[room.roundIndex];
+    if (round && round.endsAt && now >= round.endsAt) {
+      const isFinalRound = room.roundIndex >= room.totalRounds - 1;
+      room.state = isFinalRound ? 'final' : 'roundEnd';
+      if (isFinalRound) room.finalLeaderboard = buildLeaderboard(room);
+      changed = true;
+    }
+  }
+
+  // 2. Players who've gone quiet longer than the heartbeat timeout are
+  // treated as disconnected -- mirrors what a live socket "disconnect"
+  // event used to do immediately.
+  for (const id of room.playerOrder) {
+    const player = room.players[id];
+    if (player && player.connected && now - (player.lastSeenAt || 0) > HEARTBEAT_TIMEOUT_MS) {
+      player.connected = false;
+      player.disconnectedAt = now;
+      reassignHostIfNeeded(room, id);
+      changed = true;
+    }
+  }
+
+  // 3. A seat that's stayed disconnected past the grace period is freed up
+  // for real, same as an explicit leave.
+  const stale = room.playerOrder.filter((id) => {
+    const player = room.players[id];
+    return player && !player.connected && player.disconnectedAt && now - player.disconnectedAt > DISCONNECT_GRACE_MS;
+  });
+  if (stale.length) {
+    for (const id of stale) {
+      reassignHostIfNeeded(room, id);
+      delete room.players[id];
+    }
+    room.playerOrder = room.playerOrder.filter((id) => !stale.includes(id));
+    changed = true;
+  }
+
+  return changed;
+}
+
+// Every function below reads a room through this instead of calling
+// store.getRoom directly, so time-driven state (round timeouts, stale
+// disconnects) is always caught up first. Returns null both when the room
+// truly doesn't exist and when resolving staleness just emptied it out.
+async function loadRoom(roomCode) {
+  const room = await store.getRoom(roomCode);
+  if (!room) return null;
+  const changed = applyLazyStateUpdates(room);
+  if (room.playerOrder.length === 0) {
+    await store.deleteRoom(roomCode);
+    return null;
+  }
+  if (changed) await store.saveRoom(room);
+  return room;
 }
 
 // desiredCode, when given, adopts an externally-sourced code (the arcade
@@ -93,7 +186,7 @@ function makePlayer(id, username, colorIndex) {
 async function createRoom(playerId, username, desiredCode) {
   if (desiredCode) {
     const normalized = String(desiredCode).trim().toUpperCase();
-    const existing = await store.getRoom(normalized);
+    const existing = await loadRoom(normalized);
     if (existing) return joinRoom(normalized, playerId, username);
   }
   const roomCode = desiredCode ? String(desiredCode).trim().toUpperCase() : await generateUniqueRoomCode();
@@ -117,7 +210,7 @@ async function createRoom(playerId, username, desiredCode) {
 }
 
 async function joinRoom(roomCode, playerId, username) {
-  const room = await store.getRoom(roomCode);
+  const room = await loadRoom(roomCode);
   if (!room) throw err('ROOM_NOT_FOUND', 'That room code does not exist.');
   if (room.players[playerId]) {
     // Already a member (e.g. duplicate join from the same device) — treat as reconnect.
@@ -135,41 +228,46 @@ async function joinRoom(roomCode, playerId, username) {
 // Used both for an explicit rejoin_room call (after a refresh) and as the
 // fallback when join_room is called by someone already in the room.
 async function reconnectPlayer(roomCode, playerId, username) {
-  const room = await store.getRoom(roomCode);
+  const room = await loadRoom(roomCode);
   if (!room) throw err('ROOM_NOT_FOUND', 'That room no longer exists.');
   const player = room.players[playerId];
   if (!player) throw err('NOT_IN_ROOM', 'You are not in this room.');
 
   player.connected = true;
+  player.disconnectedAt = null;
+  player.lastSeenAt = Date.now();
   if (username) player.username = username;
   if (!room.playerOrder.includes(playerId)) room.playerOrder.push(playerId);
   await store.saveRoom(room);
   return room;
 }
 
-async function markDisconnected(roomCode, playerId) {
-  const room = await store.getRoom(roomCode);
-  if (!room) return null;
-  if (room.players[playerId]) room.players[playerId].connected = false;
+// Called every few seconds by a connected client (there's no persistent
+// socket to notice a disconnect anymore) -- keeps a player's presence fresh
+// and transparently resumes them if a brief blip had already flagged them
+// disconnected. Actual staleness detection happens lazily in
+// applyLazyStateUpdates on the next room load, not here.
+async function heartbeat(roomCode, playerId) {
+  const room = await loadRoom(roomCode);
+  if (!room) throw err('ROOM_NOT_FOUND', 'That room no longer exists.');
+  const player = room.players[playerId];
+  if (!player) throw err('NOT_IN_ROOM', 'You are not in this room.');
 
-  // An implicit disconnect (tab close, network drop) can take out the host
-  // just as easily as an explicit leave -- without reassignment here, the
-  // rest of the group gets stuck since round-advance/start-game are
-  // host-gated and nobody left can drive the game forward.
-  if (room.hostId === playerId) {
-    room.hostId = room.playerOrder.find((id) => room.players[id] && room.players[id].connected) || room.hostId;
+  player.lastSeenAt = Date.now();
+  if (!player.connected) {
+    player.connected = true;
+    player.disconnectedAt = null;
   }
-
   await store.saveRoom(room);
   return room;
 }
 
 async function getRoom(roomCode) {
-  return store.getRoom(roomCode);
+  return loadRoom(roomCode);
 }
 
 async function setReady(roomCode, playerId, ready) {
-  const room = await store.getRoom(roomCode);
+  const room = await loadRoom(roomCode);
   if (!room) throw err('ROOM_NOT_FOUND', 'That room code does not exist.');
   if (room.state !== 'lobby') throw err('GAME_IN_PROGRESS', 'That game has already started.');
   const player = room.players[playerId];
@@ -181,7 +279,7 @@ async function setReady(roomCode, playerId, ready) {
 }
 
 async function startGame(roomCode, requesterId) {
-  const room = await store.getRoom(roomCode);
+  const room = await loadRoom(roomCode);
   if (!room) throw err('ROOM_NOT_FOUND', 'That room code does not exist.');
   if (room.hostId !== requesterId) throw err('NOT_HOST', 'Only the host can start the game.');
   if (room.state !== 'lobby') throw err('GAME_IN_PROGRESS', 'The game has already started.');
@@ -212,7 +310,7 @@ async function startGame(roomCode, requesterId) {
 // room, its code, and its players all stay put (so late joiners can still
 // hop in before the next start).
 async function playAgain(roomCode, requesterId) {
-  const room = await store.getRoom(roomCode);
+  const room = await loadRoom(roomCode);
   if (!room) throw err('ROOM_NOT_FOUND', 'That room code does not exist.');
   if (room.hostId !== requesterId) throw err('NOT_HOST', 'Only the host can start a new game.');
   if (room.state !== 'final') throw err('WRONG_STATE', 'The game has not finished yet.');
@@ -234,7 +332,7 @@ async function playAgain(roomCode, requesterId) {
 }
 
 async function submitGuess(roomCode, playerId, guessText) {
-  const room = await store.getRoom(roomCode);
+  const room = await loadRoom(roomCode);
   if (!room) throw err('ROOM_NOT_FOUND', 'That room code does not exist.');
   if (room.state !== 'playing') throw err('NOT_PLAYING', 'No round is currently active.');
   const player = room.players[playerId];
@@ -295,26 +393,8 @@ function buildLeaderboard(room) {
     .sort((a, b) => b.score - a.score);
 }
 
-async function endRound(roomCode) {
-  const room = await store.getRoom(roomCode);
-  if (!room) throw err('ROOM_NOT_FOUND', 'That room code does not exist.');
-  if (room.state !== 'playing') return room;
-
-  const isFinalRound = room.roundIndex >= room.totalRounds - 1;
-  room.state = isFinalRound ? 'final' : 'roundEnd';
-  if (isFinalRound) {
-    // Freeze the standings the instant the game ends. Anyone who closes
-    // their tab afterward is filtered out of the *live* playerOrder-based
-    // leaderboard, but this snapshot is what the final screen renders from,
-    // so their result stays put regardless.
-    room.finalLeaderboard = buildLeaderboard(room);
-  }
-  await store.saveRoom(room);
-  return room;
-}
-
 async function nextRound(roomCode, requesterId) {
-  const room = await store.getRoom(roomCode);
+  const room = await loadRoom(roomCode);
   if (!room) throw err('ROOM_NOT_FOUND', 'That room code does not exist.');
   if (room.hostId !== requesterId) throw err('NOT_HOST', 'Only the host can advance the round.');
   if (room.state !== 'roundEnd') throw err('WRONG_STATE', 'The round has not ended yet.');
@@ -330,11 +410,12 @@ async function nextRound(roomCode, requesterId) {
   return room;
 }
 
-// Full removal — used once a disconnect's grace period actually expires, or
-// immediately for an explicit "leave" (Go Home). Distinct from
-// markDisconnected, which just flips a flag and keeps the player's seat warm.
+// Full removal — used immediately for an explicit "leave" (Go Home). A
+// missed heartbeat instead just flips connected=false via
+// applyLazyStateUpdates and keeps the seat warm until its grace period
+// actually expires (also handled there).
 async function leaveRoom(roomCode, playerId) {
-  const room = await store.getRoom(roomCode);
+  const room = await loadRoom(roomCode);
   if (!room) return null;
 
   if (room.players[playerId]) {
@@ -447,22 +528,33 @@ function buildGameSessionRecord(room) {
   };
 }
 
+// Marks a finished room's analytics as already recorded, so a concurrent or
+// repeated poll doesn't write a duplicate gamesession document. Best-effort
+// like the rest of the analytics path -- app.js calls this right after
+// saveGameSessionAnalytics() succeeds.
+async function markAnalyticsSaved(roomCode) {
+  const room = await store.getRoom(roomCode);
+  if (!room) return;
+  room.analyticsSaved = true;
+  await store.saveRoom(room);
+}
+
 module.exports = {
   TOTAL_ROUNDS,
   ROUND_SECONDS,
   createRoom,
   joinRoom,
   reconnectPlayer,
-  markDisconnected,
+  heartbeat,
   getRoom,
   setReady,
   startGame,
   playAgain,
   submitGuess,
-  endRound,
   nextRound,
   leaveRoom,
   buildLeaderboard,
   buildGameSessionRecord,
+  markAnalyticsSaved,
   toClientView,
 };
