@@ -1,5 +1,6 @@
 // Emoji "boards" — each has an emoji and its top-10 ranked keywords (rank 0 = most popular).
-// Source: QMoji 2.0 Gameplay Prototyping Project keyword survey.
+// Source: QMoji 2.0 Gameplay Prototyping Project keyword survey -- these are predetermined
+// from that offline survey, not submitted live by players during a game.
 // Scoring reads straight off `keywords` index, so editing this list is all that's
 // needed to add/remove/re-rank boards — nothing elsewhere hardcodes emoji names.
 

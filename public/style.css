@@ -59,7 +59,14 @@ body {
 
 .tagline {
   color: var(--text-muted);
-  margin-bottom: 24px;
+  margin-bottom: 8px;
+}
+
+.keyword-source-note {
+  color: var(--text-muted);
+  opacity: 0.75;
+  font-size: 0.78rem;
+  margin: 0 0 24px;
 }
 
 .field {
@@ -183,6 +190,13 @@ body {
 .leaderboard li .score { color: var(--primary-dark); }
 .leaderboard li:first-child { background: linear-gradient(90deg, #fff3d6, #ffe6b3); }
 
+.all-time-heading {
+  font-size: 1.1rem;
+  margin: 8px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
 .roster-left {
   display: flex;
   align-items: center;
@@ -265,12 +279,12 @@ body {
 .factoid-body {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 5px;
   min-width: 0;
 }
 
 .factoid-label {
-  font-size: 0.7rem;
+  font-size: 0.78rem;
   font-weight: 800;
   letter-spacing: 0.04em;
   color: var(--primary-dark);
@@ -278,11 +292,12 @@ body {
 }
 
 .factoid-text {
-  font-size: 0.82rem;
+  font-size: 0.98rem;
   color: var(--secondary);
   font-weight: 600;
   font-style: italic;
   text-align: left;
+  line-height: 1.4;
   transition: opacity 0.4s ease;
 }
 

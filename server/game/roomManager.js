@@ -151,6 +151,15 @@ async function markDisconnected(roomCode, playerId) {
   const room = await store.getRoom(roomCode);
   if (!room) return null;
   if (room.players[playerId]) room.players[playerId].connected = false;
+
+  // An implicit disconnect (tab close, network drop) can take out the host
+  // just as easily as an explicit leave -- without reassignment here, the
+  // rest of the group gets stuck since round-advance/start-game are
+  // host-gated and nobody left can drive the game forward.
+  if (room.hostId === playerId) {
+    room.hostId = room.playerOrder.find((id) => room.players[id] && room.players[id].connected) || room.hostId;
+  }
+
   await store.saveRoom(room);
   return room;
 }

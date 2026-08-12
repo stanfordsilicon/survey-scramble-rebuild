@@ -18,7 +18,8 @@
 <section id="screen-login" class="screen active">
   <div class="card">
     <h1 class="logo">Survey Scramble!</h1>
-    <p class="tagline">Guess the top 10 keywords for each emoji before time runs out!</p>
+    <p class="tagline">Guess the top keywords for each emoji before time runs out!</p>
+    <p class="keyword-source-note">Keywords are predetermined from a keyword-ranking survey — not submitted by players during the game.</p>
 
     <label class="field">
       <span>Your name</span>
@@ -121,6 +122,9 @@
     <button id="btn-play-again" class="btn btn-primary hidden">🔁 Play Again</button>
     <p id="final-waiting" class="hint hidden">Waiting for the host to start a new game…</p>
     <button id="btn-go-home" class="btn btn-secondary">Go Home</button>
+
+    <h2 class="all-time-heading">🌎 All-Time Leaderboard</h2>
+    <ol id="all-time-leaderboard" class="leaderboard"></ol>
   </div>
 </section>
 

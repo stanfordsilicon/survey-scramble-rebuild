@@ -46,7 +46,6 @@
   // authoritative game state.
   let room = null;
   let timerInterval = null;
-  let soloPromptTimer = null;
   let factoidInterval = null;
 
   const screens = {
@@ -290,22 +289,16 @@
   });
 
   // ---------- SOLO PLAY NUDGE ----------
-  // If nobody else has joined after a while, offer to just start solo rather
-  // than leaving the host stuck waiting indefinitely.
-  const SOLO_PROMPT_DELAY_MS = 45000;
-
+  // Offer to start solo immediately rather than making a lone player wait --
+  // the room stays open in the background either way, so anyone who joins
+  // later still gets pulled in normally.
   function maybeShowSoloPrompt() {
-    clearTimeout(soloPromptTimer);
     const hint = document.getElementById('lobby-solo-hint');
-    if (!room || room.players.length > 1) {
+    if (room && room.players.length === 1 && room.state === 'lobby') {
+      hint.classList.remove('hidden');
+    } else {
       hint.classList.add('hidden');
-      return;
     }
-    soloPromptTimer = setTimeout(() => {
-      if (room && room.players.length === 1 && room.state === 'lobby') {
-        hint.classList.remove('hidden');
-      }
-    }, SOLO_PROMPT_DELAY_MS);
   }
 
   document.getElementById('btn-play-solo').addEventListener('click', () => {
@@ -335,11 +328,10 @@
         textEl.textContent = facts[index];
         textEl.classList.remove('fade');
       }, 400);
-    }, 7000);
+    }, 12000);
   }
 
   function stopSoloPromptAndFactoid() {
-    clearTimeout(soloPromptTimer);
     clearInterval(factoidInterval);
     factoidInterval = null;
     document.getElementById('lobby-solo-hint').classList.add('hidden');
@@ -483,6 +475,31 @@
     document.getElementById('btn-play-again').classList.toggle('hidden', !isHost);
     document.getElementById('final-waiting').classList.toggle('hidden', isHost);
     showScreen('final');
+    loadAllTimeLeaderboard();
+  }
+
+  // ---------- ALL-TIME LEADERBOARD ----------
+  // Best single-game score across every game ever played, not just this room.
+  function loadAllTimeLeaderboard() {
+    const listEl = document.getElementById('all-time-leaderboard');
+    fetch('/api/leaderboard')
+      .then((res) => res.json())
+      .then((data) => {
+        listEl.innerHTML = '';
+        (data.leaderboard || []).forEach((entry) => {
+          const li = document.createElement('li');
+          const name = document.createElement('span');
+          name.className = 'name';
+          name.textContent = entry.username;
+          const score = document.createElement('span');
+          score.className = 'score';
+          score.textContent = `best ${entry.bestScore} · ${entry.gamesPlayed} games`;
+          li.appendChild(name);
+          li.appendChild(score);
+          listEl.appendChild(li);
+        });
+      })
+      .catch(() => { listEl.innerHTML = ''; });
   }
 
   document.getElementById('btn-play-again').addEventListener('click', () => {

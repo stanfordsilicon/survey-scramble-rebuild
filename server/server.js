@@ -3,7 +3,7 @@ const http = require('http');
 const express = require('express');
 const { Server } = require('socket.io');
 const rooms = require('./game/roomManager');
-const { connectMongo, getDb, recordPlayerResults } = require('./data/mongo');
+const { connectMongo, getDb, recordPlayerResults, getLeaderboard } = require('./data/mongo');
 const { arcadeProxy } = require('./arcade-proxy');
 
 const PORT = process.env.PORT || 4333;
@@ -16,6 +16,9 @@ const DISCONNECT_GRACE_MS = 5 * 60 * 1000;
 const app = express();
 app.use(express.json());
 app.all('/arcade-api/v1/*', arcadeProxy); // local dev only — see arcade-proxy.js
+app.get('/api/leaderboard', async (req, res) => {
+  res.json({ leaderboard: await getLeaderboard(20) });
+});
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 const server = http.createServer(app);

@@ -96,4 +96,21 @@ async function recordPlayerResults(players) {
   );
 }
 
-module.exports = { connectMongo, getDb, recordPlayerResults };
+// All-time leaderboard, ranked by best single-game score across every
+// player who's ever finished a game (mirrors emoji-munchers' leaderboard).
+async function getLeaderboard(limit = 20) {
+  if (!db) return [];
+  try {
+    return await db
+      .collection('players')
+      .find({}, { projection: { _id: 0 } })
+      .sort({ bestScore: -1 })
+      .limit(limit)
+      .toArray();
+  } catch (e) {
+    console.error('[mongo] getLeaderboard failed:', e.message);
+    return [];
+  }
+}
+
+module.exports = { connectMongo, getDb, recordPlayerResults, getLeaderboard };
