@@ -161,20 +161,87 @@ function applyLazyStateUpdates(room) {
   return changed;
 }
 
+// How many times mutateRoom() retries a save that lost an optimistic-
+// concurrency race (or a read that transiently missed an existing room)
+// before giving up. A handful is plenty -- each retry means another
+// request genuinely raced this one against the same room.
+const MAX_MUTATE_RETRIES = 6;
+
 // Every function below reads a room through this instead of calling
 // store.getRoom directly, so time-driven state (round timeouts, stale
 // disconnects) is always caught up first. Returns null both when the room
 // truly doesn't exist and when resolving staleness just emptied it out.
 async function loadRoom(roomCode) {
-  const room = await store.getRoom(roomCode);
-  if (!room) return null;
-  const changed = applyLazyStateUpdates(room);
-  if (room.playerOrder.length === 0) {
-    await store.deleteRoom(roomCode);
-    return null;
+  for (let attempt = 0; attempt < MAX_MUTATE_RETRIES; attempt++) {
+    const room = await store.getRoom(roomCode);
+    if (!room) return null;
+    const changed = applyLazyStateUpdates(room);
+    if (room.playerOrder.length === 0) {
+      await store.deleteRoom(roomCode);
+      return null;
+    }
+    if (!changed) return room;
+    const saved = await store.saveRoom(room, room.version);
+    if (saved) return saved;
+    // Someone else (another action, a poll-triggered lazy transition) saved
+    // first -- loop and retry the transition against the now-current room.
   }
-  if (changed) await store.saveRoom(room);
-  return room;
+  return store.getRoom(roomCode);
+}
+
+// Every *action* (join, start, submit guess, heartbeat, leave, ...) goes
+// through this instead of a plain read-mutate-save, so two requests racing
+// to modify the *same* room -- e.g. two players' guesses landing less than
+// one round trip apart -- can't silently clobber each other (whichever
+// saved last would otherwise just win, discarding the other's change even
+// though the response for both still reports success). On Vercel two
+// concurrent requests for the same room can land on two entirely different
+// serverless instances, so an in-process lock can't help here; this instead
+// uses the room's version field as an optimistic-concurrency token -- the
+// store only accepts a save if the version hasn't moved since this read,
+// and if it has, the whole read-mutate-save cycle retries against the
+// now-current room instead of overwriting it.
+//
+// A store.getRoom miss on the very first attempt is retried here too,
+// rather than treated as an instant "room not found" -- a cold serverless
+// instance's freshly opened Mongo connection can transiently miss a
+// document that genuinely exists, and retrying within the same request is
+// what actually rides that out instead of failing a real action with no
+// recourse (a player's action reporting failure with zero feedback reads,
+// from their side, as "the game just isn't responding").
+//
+// mutateFn may throw (e.g. "Only the host can start the game") -- that
+// propagates immediately, uncaught here, since it's a validation failure
+// the caller needs to see, not a concurrency conflict to retry past.
+// mutateFn's return value, if any, is threaded back out alongside the saved
+// room -- some actions (submitGuess) need to report more than just the
+// room's new shape.
+async function mutateRoom(roomCode, mutateFn) {
+  let everFoundRoom = false;
+  for (let attempt = 0; attempt < MAX_MUTATE_RETRIES; attempt++) {
+    const room = await store.getRoom(roomCode);
+    if (!room) continue;
+    everFoundRoom = true;
+    applyLazyStateUpdates(room);
+    if (room.playerOrder.length === 0) {
+      await store.deleteRoom(roomCode);
+      return { room: null, result: undefined };
+    }
+    const expectedVersion = room.version;
+    const result = mutateFn(room);
+    if (room.playerOrder.length === 0) {
+      // The mutation itself emptied the room (an explicit leave with nobody
+      // else connected) -- delete rather than save.
+      await store.deleteRoom(roomCode);
+      return { room: null, result };
+    }
+    const saved = await store.saveRoom(room, expectedVersion);
+    if (saved) return { room: saved, result };
+    // Someone else saved first -- loop and retry the mutation against
+    // whatever the room actually looks like now.
+  }
+  if (!everFoundRoom) return { room: null, result: undefined };
+  throw err('ROOM_BUSY', 'Room is busy — try again.');
 }
 
 // desiredCode, when given, adopts an externally-sourced code (the arcade
@@ -204,41 +271,44 @@ async function createRoom(playerId, username, desiredCode) {
     rounds: [],
     finalLeaderboard: null,
     createdAt: Date.now(),
+    version: 0,
   };
-  await store.saveRoom(room);
+  await store.saveRoom(room); // brand-new room -- nothing to conflict with yet
   return room;
 }
 
-async function joinRoom(roomCode, playerId, username) {
-  const room = await loadRoom(roomCode);
-  if (!room) throw err('ROOM_NOT_FOUND', 'That room code does not exist.');
-  if (room.players[playerId]) {
-    // Already a member (e.g. duplicate join from the same device) — treat as reconnect.
-    return reconnectPlayer(roomCode, playerId, username);
-  }
-  if (room.state !== 'lobby') throw err('GAME_IN_PROGRESS', 'That game has already started.');
-  if (room.playerOrder.length >= MAX_PLAYERS) throw err('ROOM_FULL', 'That room is full.');
-
-  room.players[playerId] = makePlayer(playerId, username, room.playerOrder.length);
-  room.playerOrder.push(playerId);
-  await store.saveRoom(room);
-  return room;
-}
-
-// Used both for an explicit rejoin_room call (after a refresh) and as the
-// fallback when join_room is called by someone already in the room.
-async function reconnectPlayer(roomCode, playerId, username) {
-  const room = await loadRoom(roomCode);
-  if (!room) throw err('ROOM_NOT_FOUND', 'That room no longer exists.');
+// Shared by joinRoom (when the joiner turns out to already be a member) and
+// reconnectPlayer, so both go through the exact same mutation.
+function applyReconnect(room, playerId, username) {
   const player = room.players[playerId];
   if (!player) throw err('NOT_IN_ROOM', 'You are not in this room.');
-
   player.connected = true;
   player.disconnectedAt = null;
   player.lastSeenAt = Date.now();
   if (username) player.username = username;
   if (!room.playerOrder.includes(playerId)) room.playerOrder.push(playerId);
-  await store.saveRoom(room);
+}
+
+async function joinRoom(roomCode, playerId, username) {
+  const { room } = await mutateRoom(roomCode, (r) => {
+    if (r.players[playerId]) {
+      // Already a member (e.g. duplicate join from the same device) — treat as reconnect.
+      applyReconnect(r, playerId, username);
+      return;
+    }
+    if (r.state !== 'lobby') throw err('GAME_IN_PROGRESS', 'That game has already started.');
+    if (r.playerOrder.length >= MAX_PLAYERS) throw err('ROOM_FULL', 'That room is full.');
+    r.players[playerId] = makePlayer(playerId, username, r.playerOrder.length);
+    r.playerOrder.push(playerId);
+  });
+  if (!room) throw err('ROOM_NOT_FOUND', 'That room code does not exist.');
+  return room;
+}
+
+// Used for an explicit rejoin_room call (after a refresh).
+async function reconnectPlayer(roomCode, playerId, username) {
+  const { room } = await mutateRoom(roomCode, (r) => applyReconnect(r, playerId, username));
+  if (!room) throw err('ROOM_NOT_FOUND', 'That room no longer exists.');
   return room;
 }
 
@@ -248,17 +318,16 @@ async function reconnectPlayer(roomCode, playerId, username) {
 // disconnected. Actual staleness detection happens lazily in
 // applyLazyStateUpdates on the next room load, not here.
 async function heartbeat(roomCode, playerId) {
-  const room = await loadRoom(roomCode);
+  const { room } = await mutateRoom(roomCode, (r) => {
+    const player = r.players[playerId];
+    if (!player) throw err('NOT_IN_ROOM', 'You are not in this room.');
+    player.lastSeenAt = Date.now();
+    if (!player.connected) {
+      player.connected = true;
+      player.disconnectedAt = null;
+    }
+  });
   if (!room) throw err('ROOM_NOT_FOUND', 'That room no longer exists.');
-  const player = room.players[playerId];
-  if (!player) throw err('NOT_IN_ROOM', 'You are not in this room.');
-
-  player.lastSeenAt = Date.now();
-  if (!player.connected) {
-    player.connected = true;
-    player.disconnectedAt = null;
-  }
-  await store.saveRoom(room);
   return room;
 }
 
@@ -267,41 +336,39 @@ async function getRoom(roomCode) {
 }
 
 async function setReady(roomCode, playerId, ready) {
-  const room = await loadRoom(roomCode);
+  const { room } = await mutateRoom(roomCode, (r) => {
+    if (r.state !== 'lobby') throw err('GAME_IN_PROGRESS', 'That game has already started.');
+    const player = r.players[playerId];
+    if (!player) throw err('NOT_IN_ROOM', 'You are not in this room.');
+    player.ready = !!ready;
+  });
   if (!room) throw err('ROOM_NOT_FOUND', 'That room code does not exist.');
-  if (room.state !== 'lobby') throw err('GAME_IN_PROGRESS', 'That game has already started.');
-  const player = room.players[playerId];
-  if (!player) throw err('NOT_IN_ROOM', 'You are not in this room.');
-
-  player.ready = !!ready;
-  await store.saveRoom(room);
   return room;
 }
 
 async function startGame(roomCode, requesterId) {
-  const room = await loadRoom(roomCode);
-  if (!room) throw err('ROOM_NOT_FOUND', 'That room code does not exist.');
-  if (room.hostId !== requesterId) throw err('NOT_HOST', 'Only the host can start the game.');
-  if (room.state !== 'lobby') throw err('GAME_IN_PROGRESS', 'The game has already started.');
-  if (room.playerOrder.length < 1) throw err('NOT_ENOUGH_PLAYERS', 'Need at least one player.');
-  // A disconnected player still mid-grace-period shouldn't block the rest of
-  // the group from starting (or restarting via Play Again) — only players
-  // who are actually present need to have readied up.
-  const allReady = room.playerOrder.every((id) => {
-    const player = room.players[id];
-    return player && (!player.connected || player.ready);
+  const { room } = await mutateRoom(roomCode, (r) => {
+    if (r.hostId !== requesterId) throw err('NOT_HOST', 'Only the host can start the game.');
+    if (r.state !== 'lobby') throw err('GAME_IN_PROGRESS', 'The game has already started.');
+    if (r.playerOrder.length < 1) throw err('NOT_ENOUGH_PLAYERS', 'Need at least one player.');
+    // A disconnected player still mid-grace-period shouldn't block the rest of
+    // the group from starting (or restarting via Play Again) — only players
+    // who are actually present need to have readied up.
+    const allReady = r.playerOrder.every((id) => {
+      const player = r.players[id];
+      return player && (!player.connected || player.ready);
+    });
+    if (!allReady) throw err('NOT_ALL_READY', 'Everyone needs to be ready before starting.');
+
+    r.rounds = pickRoundBoards();
+    r.roundIndex = 0;
+    r.state = 'playing';
+    r.finalLeaderboard = null;
+    const round = r.rounds[0];
+    round.startedAt = Date.now();
+    round.endsAt = round.startedAt + ROUND_SECONDS * 1000;
   });
-  if (!allReady) throw err('NOT_ALL_READY', 'Everyone needs to be ready before starting.');
-
-  room.rounds = pickRoundBoards();
-  room.roundIndex = 0;
-  room.state = 'playing';
-  room.finalLeaderboard = null;
-  const round = room.rounds[0];
-  round.startedAt = Date.now();
-  round.endsAt = round.startedAt + ROUND_SECONDS * 1000;
-
-  await store.saveRoom(room);
+  if (!room) throw err('ROOM_NOT_FOUND', 'That room code does not exist.');
   return room;
 }
 
@@ -310,79 +377,77 @@ async function startGame(roomCode, requesterId) {
 // room, its code, and its players all stay put (so late joiners can still
 // hop in before the next start).
 async function playAgain(roomCode, requesterId) {
-  const room = await loadRoom(roomCode);
-  if (!room) throw err('ROOM_NOT_FOUND', 'That room code does not exist.');
-  if (room.hostId !== requesterId) throw err('NOT_HOST', 'Only the host can start a new game.');
-  if (room.state !== 'final') throw err('WRONG_STATE', 'The game has not finished yet.');
+  const { room } = await mutateRoom(roomCode, (r) => {
+    if (r.hostId !== requesterId) throw err('NOT_HOST', 'Only the host can start a new game.');
+    if (r.state !== 'final') throw err('WRONG_STATE', 'The game has not finished yet.');
 
-  room.state = 'lobby';
-  room.roundIndex = -1;
-  room.rounds = [];
-  room.finalLeaderboard = null;
-  for (const id of room.playerOrder) {
-    const player = room.players[id];
-    if (player) {
-      player.score = 0;
-      player.ready = false;
+    r.state = 'lobby';
+    r.roundIndex = -1;
+    r.rounds = [];
+    r.finalLeaderboard = null;
+    for (const id of r.playerOrder) {
+      const player = r.players[id];
+      if (player) {
+        player.score = 0;
+        player.ready = false;
+      }
     }
-  }
-
-  await store.saveRoom(room);
+  });
+  if (!room) throw err('ROOM_NOT_FOUND', 'That room code does not exist.');
   return room;
 }
 
 async function submitGuess(roomCode, playerId, guessText) {
-  const room = await loadRoom(roomCode);
-  if (!room) throw err('ROOM_NOT_FOUND', 'That room code does not exist.');
-  if (room.state !== 'playing') throw err('NOT_PLAYING', 'No round is currently active.');
-  const player = room.players[playerId];
-  if (!player) throw err('NOT_IN_ROOM', 'You are not in this room.');
-
-  const round = room.rounds[room.roundIndex];
   const guess = normalizeGuess(guessText);
   if (!guess) return { result: 'empty' };
 
-  const now = Date.now();
-  const logEntry = {
-    playerId,
-    username: player.username,
-    guessText: String(guessText),
-    normalizedGuess: guess,
-    timestamp: now,
-    // "Decision time" / time-to-this-action, measured from when the round
-    // (the prompt) started.
-    msSinceRoundStart: round.startedAt ? now - round.startedAt : null,
-  };
+  const { room, result } = await mutateRoom(roomCode, (r) => {
+    if (r.state !== 'playing') throw err('NOT_PLAYING', 'No round is currently active.');
+    const player = r.players[playerId];
+    if (!player) throw err('NOT_IN_ROOM', 'You are not in this room.');
 
-  const existing = round.revealed[guess];
-  if (existing) {
-    round.guesses.push({ ...logEntry, result: 'already-revealed' });
-    await store.saveRoom(room);
-    return { result: 'already-revealed', keyword: guess, revealedBy: existing.revealedBy };
-  }
+    const round = r.rounds[r.roundIndex];
+    const now = Date.now();
+    const logEntry = {
+      playerId,
+      username: player.username,
+      guessText: String(guessText),
+      normalizedGuess: guess,
+      timestamp: now,
+      // "Decision time" / time-to-this-action, measured from when the round
+      // (the prompt) started.
+      msSinceRoundStart: round.startedAt ? now - round.startedAt : null,
+    };
 
-  const rankIndex = round.keywords.findIndex((k) => k.toLowerCase() === guess);
-  if (rankIndex === -1) {
-    round.guesses.push({ ...logEntry, result: 'no-match' });
-    await store.saveRoom(room);
-    return { result: 'no-match' };
-  }
+    const existing = round.revealed[guess];
+    if (existing) {
+      round.guesses.push({ ...logEntry, result: 'already-revealed' });
+      return { result: 'already-revealed', keyword: guess, revealedBy: existing.revealedBy };
+    }
 
-  const points = pointsForRank(rankIndex);
-  const revealedBy = { id: player.id, username: player.username, color: player.color };
-  round.revealed[guess] = { rankIndex, points, revealedBy };
-  player.score += points;
-  round.guesses.push({ ...logEntry, result: 'correct', rankIndex, points });
+    const rankIndex = round.keywords.findIndex((k) => k.toLowerCase() === guess);
+    if (rankIndex === -1) {
+      round.guesses.push({ ...logEntry, result: 'no-match' });
+      return { result: 'no-match' };
+    }
 
-  await store.saveRoom(room);
-  return {
-    result: 'correct',
-    keyword: guess,
-    rankIndex,
-    points,
-    scoreTotal: player.score,
-    revealedBy,
-  };
+    const points = pointsForRank(rankIndex);
+    const revealedBy = { id: player.id, username: player.username, color: player.color };
+    round.revealed[guess] = { rankIndex, points, revealedBy };
+    player.score += points;
+    round.guesses.push({ ...logEntry, result: 'correct', rankIndex, points });
+
+    return {
+      result: 'correct',
+      keyword: guess,
+      rankIndex,
+      points,
+      scoreTotal: player.score,
+      revealedBy,
+    };
+  });
+  if (!room) throw err('ROOM_NOT_FOUND', 'That room code does not exist.');
+  return result;
 }
 
 function buildLeaderboard(room) {
@@ -394,19 +459,18 @@ function buildLeaderboard(room) {
 }
 
 async function nextRound(roomCode, requesterId) {
-  const room = await loadRoom(roomCode);
+  const { room } = await mutateRoom(roomCode, (r) => {
+    if (r.hostId !== requesterId) throw err('NOT_HOST', 'Only the host can advance the round.');
+    if (r.state !== 'roundEnd') throw err('WRONG_STATE', 'The round has not ended yet.');
+    if (r.roundIndex >= r.totalRounds - 1) throw err('NO_MORE_ROUNDS', 'That was the final round.');
+
+    r.roundIndex += 1;
+    r.state = 'playing';
+    const round = r.rounds[r.roundIndex];
+    round.startedAt = Date.now();
+    round.endsAt = round.startedAt + r.roundSeconds * 1000;
+  });
   if (!room) throw err('ROOM_NOT_FOUND', 'That room code does not exist.');
-  if (room.hostId !== requesterId) throw err('NOT_HOST', 'Only the host can advance the round.');
-  if (room.state !== 'roundEnd') throw err('WRONG_STATE', 'The round has not ended yet.');
-  if (room.roundIndex >= room.totalRounds - 1) throw err('NO_MORE_ROUNDS', 'That was the final round.');
-
-  room.roundIndex += 1;
-  room.state = 'playing';
-  const round = room.rounds[room.roundIndex];
-  round.startedAt = Date.now();
-  round.endsAt = round.startedAt + room.roundSeconds * 1000;
-
-  await store.saveRoom(room);
   return room;
 }
 
@@ -415,25 +479,26 @@ async function nextRound(roomCode, requesterId) {
 // applyLazyStateUpdates and keeps the seat warm until its grace period
 // actually expires (also handled there).
 async function leaveRoom(roomCode, playerId) {
-  const room = await loadRoom(roomCode);
-  if (!room) return null;
+  const { room } = await mutateRoom(roomCode, (r) => {
+    if (r.players[playerId]) {
+      r.players[playerId].connected = false;
+    }
+    r.playerOrder = r.playerOrder.filter((id) => id !== playerId);
 
-  if (room.players[playerId]) {
-    room.players[playerId].connected = false;
-  }
-  room.playerOrder = room.playerOrder.filter((id) => id !== playerId);
+    const anyoneLeft = r.playerOrder.some((id) => r.players[id] && r.players[id].connected);
+    if (!anyoneLeft) {
+      // Nobody left connected (some may still be listed mid-grace-period) —
+      // tear the room down now rather than leaving zombie seats warm for the
+      // full grace period. Emptying playerOrder triggers mutateRoom's own
+      // empty-room deletion instead of duplicating that logic here.
+      r.playerOrder = [];
+      return;
+    }
 
-  const anyoneLeft = room.playerOrder.some((id) => room.players[id] && room.players[id].connected);
-  if (!anyoneLeft) {
-    await store.deleteRoom(roomCode);
-    return null;
-  }
-
-  if (room.hostId === playerId) {
-    room.hostId = room.playerOrder.find((id) => room.players[id] && room.players[id].connected) || room.hostId;
-  }
-
-  await store.saveRoom(room);
+    if (r.hostId === playerId) {
+      r.hostId = r.playerOrder.find((id) => r.players[id] && r.players[id].connected) || r.hostId;
+    }
+  });
   return room;
 }
 
