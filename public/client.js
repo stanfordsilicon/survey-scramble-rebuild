@@ -1,4 +1,9 @@
 (() => {
+  // Static (non-templated) UI text is data-i18n-driven -- see public/i18n.js.
+  // Anything with dynamic content (a score, a room code) is set directly
+  // below via t() instead, since data-i18n has no way to carry variables.
+  applyStaticTranslations();
+
   // No more persistent Socket.IO connection -- every action is a plain HTTP
   // request, and room updates arrive via polling instead of a push
   // broadcast. See server/app.js's top comment for why (Vercel serverless
@@ -16,7 +21,7 @@
       });
       return await res.json();
     } catch (e) {
-      return { ok: false, error: 'Connection error — please try again.' };
+      return { ok: false, error: t('connection_error') };
     }
   }
 
@@ -158,7 +163,7 @@
   const invitedRoomCode = new URLSearchParams(window.location.search).get('room');
   if (invitedRoomCode) {
     roomCodeInput.value = invitedRoomCode.trim().toUpperCase();
-    loginInviteHint.textContent = `You've been invited to room ${roomCodeInput.value} — enter a name and join!`;
+    loginInviteHint.textContent = t('invited_hint', { code: roomCodeInput.value });
     loginInviteHint.classList.remove('hidden');
     usernameInput.focus();
   }
@@ -192,7 +197,7 @@
   });
 
   function showLoginError(msg) {
-    loginError.textContent = msg || 'Something went wrong.';
+    loginError.textContent = msg || t('generic_error');
     loginError.classList.remove('hidden');
   }
 
@@ -299,12 +304,12 @@
       left.appendChild(renderPlayerBadge(p));
       const name = document.createElement('span');
       name.className = 'name';
-      name.textContent = p.username + (p.id === room.hostId ? ' (host)' : '');
+      name.textContent = p.username + (p.id === room.hostId ? ' ' + t('host_suffix') : '');
       left.appendChild(name);
 
       const readyBadge = document.createElement('span');
       readyBadge.className = 'ready-badge ' + (p.ready ? 'is-ready' : 'is-waiting');
-      readyBadge.textContent = p.ready ? '✅ Ready' : '⏳ Waiting';
+      readyBadge.textContent = p.ready ? t('ready_badge') : t('waiting_badge');
 
       li.appendChild(left);
       li.appendChild(readyBadge);
@@ -316,7 +321,7 @@
     const allReady = room.players.length > 0 && room.players.every((p) => !p.connected || p.ready);
 
     const readyBtn = document.getElementById('btn-toggle-ready');
-    readyBtn.textContent = me && me.ready ? 'Cancel Ready' : '✅ Ready Up';
+    readyBtn.textContent = me && me.ready ? t('cancel_ready_button') : t('ready_up_button');
 
     const startBtn = document.getElementById('btn-start-game');
     startBtn.classList.toggle('hidden', !isHost);
@@ -324,9 +329,9 @@
 
     const waiting = document.getElementById('lobby-waiting');
     if (allReady) {
-      waiting.textContent = isHost ? 'Everyone is ready — start when you are!' : 'Waiting for the host to start the game…';
+      waiting.textContent = isHost ? t('lobby_waiting_host_ready') : t('lobby_waiting_guest_ready');
     } else {
-      waiting.textContent = 'Waiting for everyone to be ready…';
+      waiting.textContent = t('lobby_waiting_not_ready');
     }
 
     maybeShowSoloPrompt();
@@ -359,7 +364,7 @@
     const url = `${window.location.origin}${window.location.pathname}?room=${room.roomCode}`;
     try {
       await navigator.clipboard.writeText(url);
-      toast('Invite link copied!');
+      toast(t('invite_link_copied'));
     } catch (e) {
       toast(url);
     }
@@ -469,8 +474,7 @@
     guessInput.value = '';
     guessFeedback.textContent = '';
     guessFeedback.className = 'guess-feedback';
-    document.getElementById('game-round-number').textContent = room.round.roundNumber;
-    document.getElementById('game-total-rounds').textContent = room.totalRounds;
+    document.getElementById('game-round-badge').textContent = t('round_progress', { round: room.round.roundNumber, total: room.totalRounds });
     document.getElementById('game-emoji').textContent = room.round.emoji;
     renderMyScore();
     renderAnswerBoard(document.getElementById('answer-board'), room.round, false);
@@ -488,7 +492,7 @@
       if (!res.ok) return toast(res.error);
       const outcome = res.outcome;
       if (outcome.result === 'correct') {
-        guessFeedback.textContent = `✅ "${outcome.keyword}" — +${outcome.points} points!`;
+        guessFeedback.textContent = t('guess_correct', { keyword: outcome.keyword, points: outcome.points });
         guessFeedback.className = 'guess-feedback correct';
         // Reflect the reveal (and my own new score) immediately instead of
         // waiting for the next poll tick -- everyone else's screens pick up
@@ -506,11 +510,11 @@
           renderMyScore();
         }
       } else if (outcome.result === 'already-revealed') {
-        const who = outcome.revealedBy ? outcome.revealedBy.username : 'someone';
-        guessFeedback.textContent = `${who} already guessed "${outcome.keyword}".`;
+        const who = outcome.revealedBy ? outcome.revealedBy.username : t('guess_already_revealed_fallback_who');
+        guessFeedback.textContent = t('guess_already_revealed', { who, keyword: outcome.keyword });
         guessFeedback.className = 'guess-feedback info';
       } else if (outcome.result === 'no-match') {
-        guessFeedback.textContent = `Not in the top 10. Try again!`;
+        guessFeedback.textContent = t('guess_wrong');
         guessFeedback.className = 'guess-feedback wrong';
       }
       // Clear on every outcome except a fresh correct guess still visible in
@@ -523,7 +527,7 @@
 
   function renderMyScore() {
     const me = room.players.find((p) => p.id === myId);
-    document.getElementById('game-my-score').textContent = me ? me.score : 0;
+    document.getElementById('game-score-line').textContent = t('score_line', { score: me ? me.score : 0 });
   }
 
   function startTimer(endsAt) {
@@ -547,8 +551,8 @@
     const isHost = room.hostId === myId;
 
     document.getElementById('scoring-title').textContent = isFinal
-      ? 'Final Round Results'
-      : `Round ${room.round.roundNumber} Results`;
+      ? t('final_round_results_title')
+      : t('round_results_title', { round: room.round.roundNumber });
     document.getElementById('scoring-emoji').textContent = room.round.emoji;
     renderAnswerBoard(document.getElementById('scoring-answer-board'), room.round, true);
     renderLeaderboard(document.getElementById('scoring-leaderboard'), room.players);
@@ -601,7 +605,7 @@
           name.textContent = entry.username;
           const score = document.createElement('span');
           score.className = 'score';
-          score.textContent = `best ${entry.bestScore} · ${entry.gamesPlayed} games`;
+          score.textContent = t('all_time_score_summary', { score: entry.bestScore, games: entry.gamesPlayed });
           li.appendChild(name);
           li.appendChild(score);
           listEl.appendChild(li);
@@ -642,7 +646,7 @@
         left.appendChild(renderPlayerBadge(p));
         const name = document.createElement('span');
         name.className = 'name';
-        name.textContent = p.username + (p.id === myId ? ' (you)' : '');
+        name.textContent = p.username + (p.id === myId ? ' ' + t('you_suffix') : '');
         left.appendChild(name);
         const score = document.createElement('span');
         score.className = 'score';
