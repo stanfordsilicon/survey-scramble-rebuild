@@ -88,6 +88,15 @@
     if (name !== 'lobby') stopSoloPromptAndFactoid();
   }
 
+  // ---------- sound mute toggle ----------
+  const muteBtn = document.getElementById('muteBtn');
+  muteBtn.addEventListener('click', () => {
+    const next = !window.SFX.isMuted();
+    window.SFX.setMuted(next);
+    muteBtn.textContent = next ? '🔇' : '🔊';
+    muteBtn.classList.toggle('muted', next);
+  });
+
   function toast(message) {
     const el = document.getElementById('toast');
     el.textContent = message;
@@ -471,6 +480,7 @@
 
   function applyRoundStarted(updatedRoom) {
     room = updatedRoom;
+    window.SFX.roundStart();
     guessInput.value = '';
     guessFeedback.textContent = '';
     guessFeedback.className = 'guess-feedback';
@@ -492,6 +502,7 @@
       if (!res.ok) return toast(res.error);
       const outcome = res.outcome;
       if (outcome.result === 'correct') {
+        window.SFX.correct();
         guessFeedback.textContent = t('guess_correct', { keyword: outcome.keyword, points: outcome.points });
         guessFeedback.className = 'guess-feedback correct';
         // Reflect the reveal (and my own new score) immediately instead of
@@ -514,6 +525,7 @@
         guessFeedback.textContent = t('guess_already_revealed', { who, keyword: outcome.keyword });
         guessFeedback.className = 'guess-feedback info';
       } else if (outcome.result === 'no-match') {
+        window.SFX.wrong();
         guessFeedback.textContent = t('guess_wrong');
         guessFeedback.className = 'guess-feedback wrong';
       }
@@ -549,6 +561,7 @@
     clearInterval(timerInterval);
     const isFinal = room.state === 'final';
     const isHost = room.hostId === myId;
+    if (isFinal) window.SFX.gameOver(); else window.SFX.roundEnd();
 
     document.getElementById('scoring-title').textContent = isFinal
       ? t('final_round_results_title')
