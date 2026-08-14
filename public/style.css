@@ -24,7 +24,7 @@
 
   --pixel-font: "Press Start 2P", "Noto Sans", sans-serif;
   --mono-font: "VT323", "Noto Sans", monospace;
-  font-size: 16px;
+  font-size: 18px;
 }
 
 * { box-sizing: border-box; }
@@ -112,7 +112,7 @@ body {
 .keyword-source-note {
   color: var(--ink-soft);
   opacity: 0.75;
-  font-size: 0.78rem;
+  font-size: 0.9rem;
   margin: 0 0 24px;
 }
 
@@ -125,7 +125,7 @@ body {
 .field span {
   display: block;
   font-family: var(--pixel-font);
-  font-size: 0.6rem;
+  font-size: 0.75rem;
   letter-spacing: 0.04em;
   color: var(--ink-soft);
   margin-bottom: 8px;
@@ -154,7 +154,7 @@ body {
   background: var(--bg-deep);
   color: var(--ink);
   font-family: var(--pixel-font);
-  font-size: 0.65rem;
+  font-size: 0.8rem;
   letter-spacing: 0.03em;
   cursor: pointer;
   transition: border-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
@@ -251,7 +251,7 @@ body {
 
 .all-time-heading {
   font-family: var(--pixel-font);
-  font-size: 0.75rem;
+  font-size: 0.85rem;
   letter-spacing: 0.03em;
   margin: 8px 0 0;
   padding-top: 16px;
@@ -278,7 +278,7 @@ body {
   min-width: 22px;
   border-radius: 50%;
   color: #17092b;
-  font-size: 0.7rem;
+  font-size: 0.82rem;
   font-weight: 800;
   display: inline-flex;
   align-items: center;
@@ -287,7 +287,7 @@ body {
 }
 
 .ready-badge {
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   font-weight: 700;
   flex-shrink: 0;
 }
@@ -346,14 +346,14 @@ body {
 
 .factoid-label {
   font-family: var(--pixel-font);
-  font-size: 0.55rem;
+  font-size: 0.7rem;
   letter-spacing: 0.04em;
   color: var(--accent);
   text-transform: uppercase;
 }
 
 .factoid-text {
-  font-size: 1.05rem;
+  font-size: 1.3rem;
   color: var(--ink-soft);
   font-weight: 600;
   font-style: italic;
@@ -386,7 +386,7 @@ body {
   z-index: 20;
 }
 
-.round-badge { font-family: var(--pixel-font); font-size: 0.6rem; color: var(--ink-soft); letter-spacing: 0.03em; }
+.round-badge { font-family: var(--pixel-font); font-size: 0.75rem; color: var(--ink-soft); letter-spacing: 0.03em; }
 
 .timer {
   font-family: var(--pixel-font);
@@ -445,7 +445,7 @@ body {
   border-radius: 50%;
   width: 22px;
   height: 22px;
-  font-size: 0.75rem;
+  font-size: 0.85rem;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -516,7 +516,7 @@ body {
   padding: 16px 18px;
 }
 
-.game-side h3 { margin-top: 0; font-family: var(--pixel-font); font-size: 0.65rem; color: var(--accent); letter-spacing: 0.03em; }
+.game-side h3 { margin-top: 0; font-family: var(--pixel-font); font-size: 0.8rem; color: var(--accent); letter-spacing: 0.03em; }
 
 .scoring-emoji {
   font-size: 4rem;
@@ -538,7 +538,7 @@ body {
 }
 
 @media (max-width: 480px) {
-  :root { font-size: 15px; }
+  :root { font-size: 17px; }
 
   .emoji-display {
     font-size: 3.4rem;
@@ -553,7 +553,7 @@ body {
 
   .answer-slot {
     padding: 8px 10px;
-    font-size: 0.85rem;
+    font-size: 0.95rem;
   }
 
   .game-top { padding: 8px 12px; top: 6px; }
