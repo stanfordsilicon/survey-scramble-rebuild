@@ -34,7 +34,7 @@
   "play_solo_button": "🎮 Play Solo For Now",
   "factoid_label": "Did you know?",
   "round_progress": "Round {round} / {total}",
-  "score_line": "Score: {score}",
+  "score_line": "🏆 {score}",
   "guess_placeholder": "Type a keyword…",
   "submit_button": "Submit",
   "guess_correct": "✅ \"{keyword}\" — +{points} points!",
