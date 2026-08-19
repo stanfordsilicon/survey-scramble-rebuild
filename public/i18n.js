@@ -1,4 +1,4 @@
-// i18n runtime for Emoji Survey Scramble.
+// i18n runtime for Moji Mojo.
 //
 // The string table is no longer baked into this file. Every language --
 // English included -- lives in public/locales/<lang>.json, fetched at
