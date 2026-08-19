@@ -34,7 +34,7 @@
   "play_solo_button": "🎮 Пока что играть в одиночку",
   "factoid_label": "А вы знали?",
   "round_progress": "Раунд {round} / {total}",
-  "score_line": "Счёт: {score}",
+  "score_line": "🏆 {score}",
   "guess_placeholder": "Введите ключевое слово…",
   "submit_button": "Отправить",
   "guess_correct": "✅ «{keyword}» — +{points} баллов!",

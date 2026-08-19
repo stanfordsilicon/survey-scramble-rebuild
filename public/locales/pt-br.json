@@ -34,7 +34,7 @@
   "play_solo_button": "🎮 Jogue sozinho por enquanto",
   "factoid_label": "Você sabia?",
   "round_progress": "Rodada {round} / {total}",
-  "score_line": "Pontuação: {score}",
+  "score_line": "🏆 {score}",
   "guess_placeholder": "Digite uma palavra-chave…",
   "submit_button": "Enviar",
   "guess_correct": "✅ “{keyword}” — +{points} pontos!",
