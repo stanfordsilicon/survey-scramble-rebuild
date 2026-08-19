@@ -238,6 +238,11 @@
   }
 
   backToLaunchpadBtn.addEventListener('click', () => {
+    // Best-effort: leaves the room cleanly instead of just navigating away
+    // and leaving a ghost player behind until their heartbeat times out.
+    // Not awaited -- navigateWithLoadingScreen's own ~650ms transition delay
+    // is enough time for this to reach the server either way.
+    if (room) api('leave-room', {}).catch(() => {});
     navigateWithLoadingScreen(QMojiArcade.backToHomescreenUrl(arcadeRoomCode, arcadeLang, arcadePlayerId));
   });
 
@@ -690,7 +695,13 @@
     });
   });
 
-  document.getElementById('btn-go-home').addEventListener('click', () => {
+  // Shared by the final screen's "Go Home" button and the mid-game/scoring
+  // "leave" icon buttons (homeBtnGame/homeBtnScoring) -- previously only the
+  // final screen could leave the room cleanly; bailing out earlier meant
+  // either playing through to the end or navigating away without ever
+  // calling leave-room, which just leaves a ghost player in the room until
+  // its own heartbeat timeout catches up.
+  function leaveGame() {
     api('leave-room', {}).then(() => {
       stopPolling();
       stopHeartbeat();
@@ -700,7 +711,13 @@
       usernameInput.value = '';
       roomCodeInput.value = '';
     });
-  });
+  }
+
+  document.getElementById('btn-go-home').addEventListener('click', leaveGame);
+  const homeBtnGame = document.getElementById('homeBtnGame');
+  if (homeBtnGame) homeBtnGame.addEventListener('click', leaveGame);
+  const homeBtnScoring = document.getElementById('homeBtnScoring');
+  if (homeBtnScoring) homeBtnScoring.addEventListener('click', leaveGame);
 
   // ---------- SHARED RENDER HELPERS ----------
   function renderLeaderboard(listEl, players) {

@@ -83,6 +83,7 @@
 <!-- GAME -->
 <section id="screen-game" class="screen">
   <div class="game-top">
+    <button id="homeBtnGame" class="icon-btn" type="button" title="Leave to home" aria-label="Leave to home">🏠</button>
     <div class="round-badge" id="game-round-badge">Round 1 / 3</div>
     <div id="game-timer" class="timer">30</div>
     <div class="my-score" id="game-score-line">Score: 0</div>
@@ -109,10 +110,12 @@
 <!-- ROUND END / SCORING -->
 <section id="screen-scoring" class="screen">
   <div class="card wide">
+    <button id="homeBtnScoring" class="icon-btn" type="button" title="Leave to home" aria-label="Leave to home">🏠</button>
     <h2 id="scoring-title">Round Results</h2>
     <div class="scoring-emoji" id="scoring-emoji">🤔</div>
 
     <div id="scoring-answer-board" class="answer-board"></div>
+    <p class="answer-source-note" data-i18n="answer_source_note">Answers are a fixed top-10 from an offline QMoji keyword survey, not live player submissions.</p>
 
     <h3 data-i18n="leaderboard_heading">Leaderboard</h3>
     <ol id="scoring-leaderboard" class="leaderboard"></ol>

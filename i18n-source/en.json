@@ -43,6 +43,7 @@
   "guess_wrong": "Not in the top 10. Try again!",
   "round_results_title": "Round {round} Results",
   "final_round_results_title": "Final Round Results",
+  "answer_source_note": "Answers are a fixed top-10 from an offline QMoji keyword survey, not live player submissions.",
   "leaderboard_heading": "Leaderboard",
   "next_round_button": "Next Round",
   "see_final_results_button": "See Final Results",
