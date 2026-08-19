@@ -228,6 +228,17 @@ body {
   font-size: 0.9rem;
 }
 
+.game-instructions {
+  text-align: center;
+  margin: 4px 0 12px;
+}
+
+.guess-activity {
+  text-align: center;
+  margin: 8px 0 0;
+  font-size: 0.85rem;
+}
+
 .player-list, .leaderboard {
   list-style: none;
   padding: 0;
@@ -324,7 +335,7 @@ body {
 
 .factoid-box {
   margin-top: 16px;
-  padding: 14px 16px;
+  padding: 16px 18px;
   border-radius: 8px;
   background: linear-gradient(120deg, rgba(255,233,63,0.1), rgba(255,63,216,0.1) 55%, rgba(51,255,240,0.1));
   background-size: 200% 200%;
@@ -356,7 +367,7 @@ body {
 .factoid-body {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -369,12 +380,12 @@ body {
 }
 
 .factoid-text {
-  font-size: 1.3rem;
+  font-size: 1.5rem;
   color: var(--ink-soft);
   font-weight: 600;
   font-style: italic;
   text-align: left;
-  line-height: 1.4;
+  line-height: 1.6;
   transition: opacity 0.4s ease;
 }
 

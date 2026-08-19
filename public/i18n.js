@@ -73,6 +73,8 @@ const I18N_STRINGS = {
     play_solo_button: "🎮 Play Solo For Now",
     factoid_label: "Did you know?",
     round_progress: "Round {round} / {total}",
+    game_instructions: "Type one of the top keywords for this emoji — first to guess each one claims the points!",
+    guess_activity: "🎯 {count} guesses so far this round",
     score_line: "🏆 {score}",
     guess_placeholder: "Type a keyword…",
     submit_button: "Submit",

@@ -459,7 +459,7 @@
         textEl.textContent = facts[index];
         textEl.classList.remove('fade');
       }, 400);
-    }, 12000);
+    }, 20000);
   }
 
   function stopSoloPromptAndFactoid() {
@@ -514,6 +514,7 @@
         renderAnswerBoard(document.getElementById('answer-board'), room.round, false);
         renderLeaderboard(document.getElementById('game-leaderboard'), room.players);
         renderMyScore();
+        renderGuessActivity(room.round);
       }
       return;
     }
@@ -550,9 +551,21 @@
     renderMyScore();
     renderAnswerBoard(document.getElementById('answer-board'), room.round, false);
     renderLeaderboard(document.getElementById('game-leaderboard'), room.players);
+    renderGuessActivity(room.round);
     showScreen('game');
     guessInput.focus();
     startTimer(room.round.endsAt);
+  }
+
+  // Ambient, fully-anonymized signal that guessing is actively happening --
+  // a bare count, never who guessed or what they typed, so a wrong guess
+  // still shows up as *activity* (the round isn't quiet) without exposing
+  // anything the answer board itself doesn't already reveal once a keyword
+  // is actually matched.
+  function renderGuessActivity(round) {
+    const el = document.getElementById('guess-activity');
+    const count = round.guessCount || 0;
+    el.textContent = count > 0 ? t('guess_activity', { count }) : '';
   }
 
   guessForm.addEventListener('submit', (e) => {
@@ -562,6 +575,13 @@
     api('submit-guess', { guess }).then((res) => {
       if (!res.ok) return toast(res.error);
       const outcome = res.outcome;
+      // Every attempt (correct, wrong, or already-revealed) counts toward
+      // the ambient activity count -- reflect it here immediately rather
+      // than waiting for the next poll tick to catch up.
+      if (room && room.round) {
+        room.round.guessCount = (room.round.guessCount || 0) + 1;
+        renderGuessActivity(room.round);
+      }
       if (outcome.result === 'correct') {
         window.SFX.correct();
         guessFeedback.textContent = t('guess_correct', { keyword: outcome.keyword, points: outcome.points });

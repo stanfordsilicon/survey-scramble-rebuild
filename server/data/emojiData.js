@@ -21,7 +21,14 @@ const EMOJI_BOARDS = [
   { emoji: '😑', keywords: ['awkward', 'dead', 'expressionless', 'face', 'fine', 'inexpressive', 'jealous', 'meh', 'not', 'oh'] },
   { emoji: '💩', keywords: ['bs', 'comic', 'doo', 'dung', 'face', 'fml', 'monster', 'pile', 'poo', 'poop'] },
   { emoji: '👋', keywords: ['bye', 'cya', 'g2g', 'greetings', 'gtg', 'hand', 'hello', 'hey', 'hi', 'later'] },
-  { emoji: '🌈', keywords: ['gay', 'genderqueer', 'glbt', 'glbtq', 'lesbian', 'lgbt', 'lgbtq', 'lgbtqia', 'nature', 'pride'] },
+  // Previously 8 of these 10 slots were near-duplicate spellings of the same
+  // single association (gay/genderqueer/glbt/glbtq/lesbian/lgbt/lgbtq/lgbtqia),
+  // crowding out every other real-world reading of this emoji -- rainbow
+  // itself wasn't even a keyword for the rainbow emoji. Kept the genuine
+  // pride/lgbtq association (still real and common) at one entry each, and
+  // filled the rest with the other common associations that had zero
+  // representation.
+  { emoji: '🌈', keywords: ['rainbow', 'colorful', 'colors', 'pride', 'lgbtq', 'weather', 'unicorn', 'hope', 'diversity', 'happy'] },
   { emoji: '👊', keywords: ['absolutely', 'agree', 'boom', 'bro', 'bruh', 'bump', 'clenched', 'correct', 'fist', 'hand'] },
   { emoji: '🥹', keywords: ['admiration', 'aww', 'back', 'cry', 'embarrassed', 'face', 'feelings', 'grateful', 'gratitude', 'holding'] },
   { emoji: '😙', keywords: ['143', 'closed', 'date', 'dating', 'eye', 'eyes', 'face', 'flirt', 'ily', 'kiss'] },

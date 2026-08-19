@@ -547,6 +547,11 @@ function toClientView(room) {
         emoji: currentRound.emoji,
         endsAt: currentRound.endsAt,
         revealed: currentRound.revealed,
+        // A bare count of every guess attempt this round (correct, wrong, or
+        // a repeat) -- never who guessed or what they typed, so this stays
+        // fully anonymous while still giving every player a live signal that
+        // guessing is actively happening, not just silence until a match.
+        guessCount: currentRound.guesses.length,
         ...(room.state !== 'playing' ? { keywords: currentRound.keywords } : {}),
       }
     : null;
