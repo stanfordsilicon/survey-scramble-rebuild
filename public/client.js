@@ -74,6 +74,7 @@ initI18n().then(() => {
   let room = null;
   let timerInterval = null;
   let factoidInterval = null;
+  let factoidLoading = false;
   let pollTimer = null;
   let heartbeatTimer = null;
 
@@ -445,24 +446,38 @@ initI18n().then(() => {
   });
 
   // ---------- LOBBY FACTOIDS ----------
+  // Factoid text is fetched on demand rather than shipped with the chrome --
+  // it's lobby-only and ~10x the volume, so the first paint shouldn't wait on
+  // it. See public/factoids.js.
   function startFactoidRotator() {
-    const box = document.getElementById('lobby-factoid');
-    const textEl = document.getElementById('lobby-factoid-text');
-    const facts = window.SURVEY_SCRAMBLE_FACTOIDS || [];
-    if (factoidInterval || !facts.length) return;
+    if (factoidInterval || factoidLoading) return;
+    factoidLoading = true;
+    window.loadFactoids().then((facts) => {
+      factoidLoading = false;
+      // The lobby may have been left while the fetch was in flight, or a
+      // rotator may have started in the meantime.
+      if (factoidInterval || !facts.length || !isLobbyVisible()) return;
 
-    let index = Math.floor(Math.random() * facts.length);
-    textEl.textContent = facts[index];
-    box.classList.remove('hidden');
+      const box = document.getElementById('lobby-factoid');
+      const textEl = document.getElementById('lobby-factoid-text');
+      let index = Math.floor(Math.random() * facts.length);
+      textEl.textContent = facts[index];
+      box.classList.remove('hidden');
 
-    factoidInterval = setInterval(() => {
-      textEl.classList.add('fade');
-      setTimeout(() => {
-        index = (index + 1) % facts.length;
-        textEl.textContent = facts[index];
-        textEl.classList.remove('fade');
-      }, 400);
-    }, 20000);
+      factoidInterval = setInterval(() => {
+        textEl.classList.add('fade');
+        setTimeout(() => {
+          index = (index + 1) % facts.length;
+          textEl.textContent = facts[index];
+          textEl.classList.remove('fade');
+        }, 400);
+      }, 20000);
+    });
+  }
+
+  // Screens are toggled with an .active class (see showScreen), not .hidden.
+  function isLobbyVisible() {
+    return !!screens.lobby && screens.lobby.classList.contains('active');
   }
 
   function stopSoloPromptAndFactoid() {

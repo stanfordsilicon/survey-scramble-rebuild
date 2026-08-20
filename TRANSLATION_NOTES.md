@@ -107,3 +107,60 @@ Adopted here: **17** strings from Sid, plus
 | `ru` | `guess_already_revealed` | Sid's `угадал(а)` handles player gender; mine was masculine-only and wordier. | `{who} уже угадал(а) «{keyword}».` | **from Sid** (his translation, unverified) |
 | `ru` | `guess_correct` | `очков` is the ordinary Russian word for game points; mine (`баллов`) suggests exam marks. | `✅ «{keyword}» — +{points} очков!` | **from Sid** (his translation, unverified) |
 | `ru` | `ready_up_button` | Sid's wording (`Я готов`, "I'm ready") is better than my formal imperative `Готовьтесь`; adopted his phrasing with sentence case instead of his Title Case. | `✅ Я готов` | claude-corrected, unverified |
+
+## Factoids bundle
+
+100 "Did you know" entries, `factoid_001`–`factoid_100`, translated into five
+languages: **500 strings**. What follows is an honest account of what was and
+was not reviewed.
+
+### Reviewed
+
+**1. Numeric validation — all 500, mechanically.** Every figure in the English
+must appear in the translation. This ran on everything and is the one form of
+coverage that is complete. It caught, and rejected until resolved:
+
+- Seven Russian entries where a year range, a clause order, or a grouped
+  thousand had changed shape. All resolved by teaching the validator that
+  `1998–99` and `1998–1999` are the same range, and that clause reordering is
+  not a dropped figure (pass/fail is on the set of figures; order is reported).
+- Three genuine delexicalizations, now listed with reasons in
+  `factoids.numeric-exempt.json`: `factoid_054` (`#1 most-used` → "the most
+  used"), `factoid_097` (`COVID-related` → `COVID-19`, adding a figure), and
+  `factoid_099` in Spanish (`10th` → `décimo`).
+
+**2. Proper nouns and technical terms — all 100 entries, mechanically, against
+a list of 31 names.** No Latin-script name was lost in any language: Apple,
+Google, Microsoft, Unicode, Emojipedia, Kickstarter, SwiftKey, NTT DoCoMo,
+iOS all survive verbatim. What the check flagged turned out to be correct
+localization, not loss: `Consortium` → `Consorcio`/`Консорциум` (the common
+noun translates, `Unicode` stays), `Moby-Dick` → `Моби Дик` (the standard
+Russian title), `Herman Melville` → `Германа Мелвилла` (Cyrillic, declined).
+
+**3. Factual drift — a targeted sample, NOT all 500.** 37 of 100 entries carry
+causal, attributive or hedging language, which is where a mistranslation turns
+a true claim false. I read a sample of those in **French and Spanish only**.
+Causation, attribution and hedging held up in the ones I read ("because" →
+"car"/"porque"; "Oxford analyzed with SwiftKey" → "analysées par Oxford en
+collaboration avec SwiftKey"; "about 20%" → "environ 20 %").
+
+One real drift found and overridden:
+
+| Lang | Key | What was wrong | Status |
+|---|---|---|---|
+| `es` | `factoid_004` | English says the resemblance between *emoji* and *emotion* is **coincidental**; the Spanish said `coincidencia en la pronunciación` — "a coincidence in *pronunciation*", a specific claim the source does not make. French rendered it correctly as `ressemblance fortuite`. | claude-corrected, unverified |
+
+### NOT reviewed
+
+- **Factual accuracy of the Portuguese and Russian factoids.** Numbers and
+  names are verified mechanically; the prose around them is not. A causal or
+  attributive drift like the Spanish one above would not have been caught in
+  those languages.
+- **Most of the French and Spanish prose.** I read a sample of the 37
+  high-risk entries, not all of them, and barely touched the other 63.
+- **Register**, in any language. It was fourth priority and I did not get to
+  it. These are encyclopedic statements, so register matters far less here
+  than in the chrome, but it is unexamined.
+
+Treat the mechanical checks as complete and the human judgement as a spot
+check. **No factoid has been read by a native speaker in any language.**

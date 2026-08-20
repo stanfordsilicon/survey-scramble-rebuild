@@ -1,0 +1,23 @@
+{
+  "_readme": [
+    "Keys exempted from the numeric-sequence check, each with a reason.",
+    "",
+    "The validator normally fails a run when a figure in the English is",
+    "missing from a translation, because a dropped number in a factual",
+    "sentence makes a stated fact false. A few figures legitimately stop",
+    "being figures in translation -- '#1 most-used' becomes 'the most used',",
+    "'10th anniversary' becomes 'décimo aniversario'. The claim is unchanged;",
+    "only the numeral is gone.",
+    "",
+    "Those keys are named here ONE AT A TIME with a written reason, so each",
+    "exemption stays a deliberate decision rather than a blanket loosening.",
+    "Exempt keys still print their mismatch on every run -- they just don't",
+    "fail it. Do not add a key here to silence a real dropped figure.",
+    "",
+    "Every entry below was reviewed against the English source, not against",
+    "the machine translation."
+  ],
+  "factoid_054": "English '#1 most-used'; all five languages render it as 'the most used' with no numeral. Rank claim unchanged.",
+  "factoid_097": "English says 'COVID-related'; translations expand it to the disease's full name, COVID-19, adding a 19 the source never had. Factually correct expansion.",
+  "factoid_099": "English '10th anniversary'; Spanish spells the ordinal as 'décimo'. Same anniversary."
+}

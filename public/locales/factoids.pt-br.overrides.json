@@ -1,0 +1,18 @@
+{
+  "_readme": [
+    "HUMAN OVERRIDES for the Did You Know factoids, pt-br. Always wins.",
+    "",
+    "scripts/translate.mjs READS this file and merges it on top of DeepL's",
+    "output. It never writes here. To fix a bad factoid translation, add the",
+    "key HERE -- do not edit factoids.pt-br.json, which is regenerated on every run.",
+    "",
+    "These are FACTUAL claims about writing systems and computing history. A",
+    "mistranslated date, quantity, attribution or causal link makes a stated",
+    "fact false. The generator enforces that every figure in the English",
+    "appears in the output, in order -- but it cannot check meaning. Corrections",
+    "here should be made against the English source, not against the machine",
+    "translation.",
+    "",
+    "Keys are factoid_NNN and match public/locales/factoids.en.json."
+  ]
+}

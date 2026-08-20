@@ -89,6 +89,61 @@ Before writing any file it **validates** that every `{placeholder}` token
 and every emoji in the output matches the English source exactly. On a
 mismatch it names the offending key and writes nothing for that language.
 
+## Factoids
+
+The "Did you know" facts shown in the lobby live in
+`public/locales/factoids.en.json`, keyed `factoid_001` onward, and translate
+through the same pipeline as the UI chrome:
+
+```bash
+node --env-file=$HOME/.config/qmoji/deepl.env scripts/translate.mjs --bundle=factoids
+```
+
+They are a separate bundle from the chrome on purpose. 100 prose entries in
+the same file as 57 chrome keys makes both the diffs and the overrides
+unreadable; the two have different review cadences; and a missing factoid is
+cosmetic where a missing button label is broken UI. `public/factoids.js`
+fetches them **lazily**, only when the lobby opens — they are roughly ten
+times the volume of the chrome and no first paint should wait on them. A fact
+missing from `factoids.fr.json` falls back to English per key, same as `t()`.
+
+### The ID rule: append-only
+
+**Never renumber an entry. Never reuse a retired ID.**
+
+The IDs are the only thing tying a fact to its translation in five languages,
+to any override written against it, and to any note recorded about it. Renumber
+once and every one of those links silently points at the wrong fact — a
+mistranslation review from last month now reads as applying to a different
+claim entirely, and nothing in the tooling can detect it.
+
+So:
+
+- **Adding a fact** — give it the next unused number and append it. Do not
+  insert it in the middle, even if it belongs there thematically. Display
+  order is not storage order; if the lobby should show them in a particular
+  sequence, that is a change to `factoids.js`, not to the IDs.
+- **Removing a fact** — delete the entry and **retire the ID permanently**.
+  Leave the gap. `factoid_042` never comes back.
+- **Rewording a fact** — keep the ID only if it is still the *same claim*. A
+  typo fix or a clarification keeps its ID and re-translates on the next run.
+  A different claim gets a new ID, and the old one is retired.
+
+### Numeric validation
+
+These are factual claims, and a dropped or altered figure makes a stated fact
+false. The generator enforces that every number in the English appears in the
+translation. Locales that legitimately reformat numbers (French and Russian
+use a comma decimal mark and space grouping, so `26.71` correctly becomes
+`26,71`) are **reported, not failed**, so you can tell a reformat from a
+dropped figure at a glance.
+
+A handful of figures legitimately stop being figures — "#1 most-used" becomes
+"the most used", "10th anniversary" becomes "décimo aniversario". Those keys
+are listed one at a time in `public/locales/factoids.numeric-exempt.json`,
+each with a written reason. **Do not add a key there to silence a genuinely
+dropped number.**
+
 ## Fixing a bad translation
 
 **Do not edit `public/locales/<lang>.json`.** It is machine-generated and
