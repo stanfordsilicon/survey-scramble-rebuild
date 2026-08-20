@@ -24,5 +24,6 @@
   "round_progress": "Ronda {round} / {total}",
   "guess_placeholder": "Escreve uma palavra-chave…",
   "guess_correct": "✅ «{keyword}» — +{points} pontos!",
-  "all_time_score_summary": "melhor pontuação {score} · {games} partidas"
+  "all_time_score_summary": "melhor pontuação {score} · {games} partidas",
+  "back_to_launchpad": "VOLTAR À BASE"
 }

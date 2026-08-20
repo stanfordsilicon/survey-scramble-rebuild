@@ -27,8 +27,17 @@
   "lobby_waiting_host_ready": "Tout le monde est prêt — lance la partie quand tu veux !",
   "factoid_label": "Le savais-tu ?",
   "round_progress": "Tour {round} / {total}",
-  "guess_placeholder": "Saisis un mot-clé…",
+  "guess_placeholder": "Tape un mot-clé…",
   "guess_correct": "✅ « {keyword} » — +{points} points !",
   "all_time_score_summary": "meilleur score {score} · {games} parties",
-  "go_home_button": "Accueil"
+  "go_home_button": "Accueil",
+  "back_to_launchpad": "RETOUR À LA BASE",
+  "loading": "CHARGEMENT",
+  "make_host_button": "Nommer hôte",
+  "kick_button": "Retirer",
+  "submit_button": "Valider",
+  "guess_wrong": "Pas dans le top 10. Réessaie !",
+  "game_instructions": "Tape l'un des mots-clés les plus populaires pour cet emoji — le premier à deviner chacun d'eux remporte les points !",
+  "guess_activity": "🎯 {count} tentatives jusqu'ici ce tour",
+  "lobby_title": "Code du salon"
 }
