@@ -1,7 +1,7 @@
 {
   "app_title": "Moji Mojo",
   "app_tagline": "Adivinha as principais palavras-chave para cada emoji antes que o tempo acabe!",
-  "back_to_launchpad": "VOLTAR À PLATAFORMA DE LANÇAMENTO",
+  "back_to_launchpad": "VOLTAR À BASE",
   "loading": "A CARREGAR",
   "username_label": "O teu nome",
   "username_placeholder": "Jogador1234",
@@ -34,6 +34,8 @@
   "play_solo_button": "🎮 Jogar sozinho, por enquanto",
   "factoid_label": "Sabias que...?",
   "round_progress": "Ronda {round} / {total}",
+  "game_instructions": "Escreve uma das principais palavras-chave relacionadas com este emoji — quem adivinhar primeiro cada uma fica com os pontos!",
+  "guess_activity": "🎯 {count} palpites até agora nesta ronda",
   "score_line": "🏆 {score}",
   "guess_placeholder": "Escreve uma palavra-chave…",
   "submit_button": "Enviar",

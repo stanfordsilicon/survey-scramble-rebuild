@@ -28,5 +28,11 @@
   "lobby_waiting_host_ready": "Все готовы — начинай, когда будешь готов!",
   "lobby_waiting_not_ready": "Ожидание готовности всех игроков…",
   "see_final_results_button": "Смотреть финальные результаты",
-  "all_time_score_summary": "лучший счёт {score} · игр: {games}"
+  "all_time_score_summary": "лучший счёт {score} · игр: {games}",
+  "back_to_launchpad": "ВЕРНУТЬСЯ НА БАЗУ",
+  "guess_correct": "✅ «{keyword}» — +{points} очков!",
+  "guess_already_revealed": "{who} уже угадал(а) «{keyword}».",
+  "guess_activity": "🎯 {count} попыток в этом раунде",
+  "ready_up_button": "✅ Я готов",
+  "game_instructions": "Введи одно из самых популярных ключевых слов для этого смайлика — кто первым угадает каждое, тот получает очки!"
 }

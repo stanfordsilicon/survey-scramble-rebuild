@@ -64,3 +64,46 @@ as an adjective of *games* in all five languages. The overrides above patch
 each language, but the English source is the actual defect and a reworded
 English string is pending review. When it lands, revisit these five rows —
 an override silently keeps winning even after its English is fixed.
+
+## Adopted from Sid's translations
+
+Sid (@HtchHiker42) hand-translated these games independently. His strings were
+superseded by the pipeline, but not before diffing them key by key against mine.
+Where his read better, his is used — credited here rather than relabelled as my
+own work. **These are Sid's words and are still unverified by a native speaker.**
+
+He caught four things I had genuinely got wrong or missed: a French
+`make_host_button` I fixed in two other languages but not French, a formal
+`Réessayez` and `Commencez` that slipped past my own register pass, a Russian
+`в {seconds}` that means *at 5* rather than *in 5 seconds*, and the pt-br
+sports-fixture register I fixed everywhere except pt-br.
+
+His systematic weaknesses, which is why the rest was not adopted: Title Case
+applied to Spanish, French, Portuguese and Russian (none of which use it),
+formal register throughout Russian, and translating the game's own name.
+
+Adopted here: **17** strings from Sid, plus
+**3** of my own that this comparison exposed.
+
+| Lang | Key | Why | Value | Source |
+|---|---|---|---|---|
+| `es` | `back_to_launchpad` | Sid's is far shorter and reads as arcade language. Mine (`VOLVER A LA PLATAFORMA DE LANZAMIENTO`) was the string I measured overflowing its button at 375px by up to 85%, so this fixes a real layout bug as well. | `VOLVER A LA BASE` | **from Sid** (his translation, unverified) |
+| `es` | `guess_activity` | Mine rendered *guesses* as `predicciones` / `prédictions` / `предположения` — predictions, which is wrong. Sid's attempts/tentatives/попыток reads correctly in a counter. | `🎯 {count} intentos hasta ahora en esta ronda` | **from Sid** (his translation, unverified) |
+| `fr` | `back_to_launchpad` | Sid's is far shorter and reads as arcade language. Mine (`VOLVER A LA PLATAFORMA DE LANZAMIENTO`) was the string I measured overflowing its button at 375px by up to 85%, so this fixes a real layout bug as well. | `RETOUR À LA BASE` | **from Sid** (his translation, unverified) |
+| `fr` | `game_instructions` | **Mine regressed to formal** (`Tapez`). Sid's is informal, per house style. | `Tape l'un des mots-clés les plus populaires pour cet emoji — le premier à deviner chacun d'eux remporte les points !` | **from Sid** (his translation, unverified) |
+| `fr` | `guess_activity` | Mine rendered *guesses* as `predicciones` / `prédictions` / `предположения` — predictions, which is wrong. Sid's attempts/tentatives/попыток reads correctly in a counter. | `🎯 {count} tentatives jusqu'ici ce tour` | **from Sid** (his translation, unverified) |
+| `fr` | `guess_placeholder` | More casual and consistent with `Tape` in game_instructions. | `Tape un mot-clé…` | **from Sid** (his translation, unverified) |
+| `fr` | `guess_wrong` | **Mine had a register bug I missed** — `Réessayez` is formal. Sid's is informal and shorter. | `Pas dans le top 10. Réessaie !` | **from Sid** (his translation, unverified) |
+| `fr` | `kick_button` | `Supprimer` means delete (data); `Retirer` means remove (a person). | `Retirer` | **from Sid** (his translation, unverified) |
+| `fr` | `loading` | `CHARGEMENT` matches the English's length; mine (`CHARGEMENT EN COURS`) was 172% longer and at risk of overflow. | `CHARGEMENT` | **from Sid** (his translation, unverified) |
+| `fr` | `lobby_title` | Found by diffing against Sid's: mine still said `Code de la chambre` (bedroom). Set to `Code du salon` for consistency with `room_code_label` rather than Sid's `salle`. | `Code du salon` | claude-corrected, unverified |
+| `fr` | `make_host_button` | **I missed this one.** I fixed `make_host_button` in es and ru but not fr, so mine still said `Créer un hôte` ("create a host"). Sid's `Nommer hôte` correctly means appoint. | `Nommer hôte` | **from Sid** (his translation, unverified) |
+| `fr` | `submit_button` | `Valider` is the standard French UI verb for submitting an answer; `Envoyer` means send. | `Valider` | **from Sid** (his translation, unverified) |
+| `pt-br` | `back_to_launchpad` | Sid's is far shorter and reads as arcade language. Mine (`VOLVER A LA PLATAFORMA DE LANZAMIENTO`) was the string I measured overflowing its button at 375px by up to 85%, so this fixes a real layout bug as well. | `VOLTAR À BASE` | **from Sid** (his translation, unverified) |
+| `pt-pt` | `back_to_launchpad` | Sid's is far shorter and reads as arcade language. Mine (`VOLVER A LA PLATAFORMA DE LANZAMIENTO`) was the string I measured overflowing its button at 375px by up to 85%, so this fixes a real layout bug as well. | `VOLTAR À BASE` | **from Sid** (his translation, unverified) |
+| `ru` | `back_to_launchpad` | Sid's is far shorter and reads as arcade language. Mine (`VOLVER A LA PLATAFORMA DE LANZAMIENTO`) was the string I measured overflowing its button at 375px by up to 85%, so this fixes a real layout bug as well. | `ВЕРНУТЬСЯ НА БАЗУ` | **from Sid** (his translation, unverified) |
+| `ru` | `game_instructions` | Both Sid's and my Russian were formal (`Введите`). Rewritten informal. | `Введи одно из самых популярных ключевых слов для этого смайлика — кто первым угадает каждое, тот получает очки!` | claude-corrected, unverified |
+| `ru` | `guess_activity` | Mine rendered *guesses* as `predicciones` / `prédictions` / `предположения` — predictions, which is wrong. Sid's attempts/tentatives/попыток reads correctly in a counter. | `🎯 {count} попыток в этом раунде` | **from Sid** (his translation, unverified) |
+| `ru` | `guess_already_revealed` | Sid's `угадал(а)` handles player gender; mine was masculine-only and wordier. | `{who} уже угадал(а) «{keyword}».` | **from Sid** (his translation, unverified) |
+| `ru` | `guess_correct` | `очков` is the ordinary Russian word for game points; mine (`баллов`) suggests exam marks. | `✅ «{keyword}» — +{points} очков!` | **from Sid** (his translation, unverified) |
+| `ru` | `ready_up_button` | Sid's wording (`Я готов`, "I'm ready") is better than my formal imperative `Готовьтесь`; adopted his phrasing with sentence case instead of his Title Case. | `✅ Я готов` | claude-corrected, unverified |

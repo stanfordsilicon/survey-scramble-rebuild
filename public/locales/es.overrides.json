@@ -23,5 +23,7 @@
   "guess_already_revealed": "{who} ya había adivinado «{keyword}».",
   "round_results_title": "Resultados de la ronda {round}",
   "play_again_button": "🔁 Volver a jugar",
-  "all_time_score_summary": "mejor puntuación {score} · {games} partidas"
+  "all_time_score_summary": "mejor puntuación {score} · {games} partidas",
+  "back_to_launchpad": "VOLVER A LA BASE",
+  "guess_activity": "🎯 {count} intentos hasta ahora en esta ronda"
 }
