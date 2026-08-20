@@ -17,5 +17,5 @@ process.on('uncaughtException', (err) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Emoji Survey Scramble listening on http://localhost:${PORT}`);
+  console.log(`Moji Mojo listening on http://localhost:${PORT}`);
 });

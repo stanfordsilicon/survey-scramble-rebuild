@@ -1,4 +1,4 @@
-// Express app for Emoji Survey Scramble.
+// Express app for Moji Mojo.
 //
 // This used to be a Socket.IO server holding a persistent WebSocket per
 // player, with room state in server/game/store.js's in-memory Map and round

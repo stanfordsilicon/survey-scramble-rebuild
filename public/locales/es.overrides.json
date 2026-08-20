@@ -1,0 +1,29 @@
+{
+  "_readme": [
+    "HUMAN OVERRIDES for es. This file is hand-maintained and always wins.",
+    "",
+    "scripts/translate.mjs READS this file and merges it on top of DeepL's",
+    "output. It never writes to, modifies, or deletes this file.",
+    "",
+    "To fix a bad translation, add the key HERE -- do not edit es.json,",
+    "which is regenerated and overwritten on every run.",
+    "",
+    "Every entry below was written by Claude, not a native speaker. See",
+    "TRANSLATION_NOTES.md for what was wrong with each one and its review",
+    "status. Nothing here has been verified by a human.",
+    "",
+    "Keys must match public/locales/en.json. {placeholder} tokens and emoji",
+    "must match the English exactly -- the generator validates overrides on",
+    "the same terms as generated text and refuses to write the locale if they",
+    "don't. (JSON has no comment syntax, hence this _readme key; the merge",
+    "only considers keys that exist in en.json, so it is inert.)"
+  ],
+  "cancel_ready_button": "Cancelar",
+  "make_host_button": "Hacer anfitrión",
+  "guess_already_revealed": "{who} ya había adivinado «{keyword}».",
+  "round_results_title": "Resultados de la ronda {round}",
+  "play_again_button": "🔁 Volver a jugar",
+  "all_time_score_summary": "mejor puntuación {score} · {games} partidas",
+  "back_to_launchpad": "VOLVER A LA BASE",
+  "guess_activity": "🎯 {count} intentos hasta ahora en esta ronda"
+}
