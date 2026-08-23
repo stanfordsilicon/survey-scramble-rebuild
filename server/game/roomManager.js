@@ -1,4 +1,4 @@
-// Core game rules for Emoji Survey Scramble.
+// Core game rules for Moji Mojo.
 //
 // This module is deliberately free of any networking/transport knowledge —
 // it only reads and writes plain JSON-shaped "room" objects via ./store.js.
@@ -617,7 +617,7 @@ function buildGameSessionRecord(room) {
   const finalPlayers = room.finalLeaderboard || buildLeaderboard(room);
 
   return {
-    game: 'Survey Scramble',
+    game: 'Moji Mojo',
     roomCode: room.roomCode,
     language: 'en',
     gameStartedAt: new Date(gameStartedAt),

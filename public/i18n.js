@@ -1,4 +1,4 @@
-// i18n runtime for Emoji Survey Scramble.
+// i18n runtime for Moji Mojo.
 //
 // Covers the 5 UI languages QMoji 2.0's homescreen lets a player pick
 // (en/es/fr/pt/ru -- see qmoji-2's QMOJI_UI_LANGUAGES). I18N_STRINGS.en is
@@ -34,7 +34,7 @@ function resolveI18nLang() {
 
 const I18N_STRINGS = {
   en: {
-    app_title: "Survey Scramble!",
+    app_title: "Moji Mojo!",
     app_tagline: "Guess the top keywords for each emoji before time runs out!",
     back_to_launchpad: "RETURN TO LAUNCH PAD",
     loading: "LOADING",
@@ -93,7 +93,7 @@ const I18N_STRINGS = {
     all_time_score_summary: "best {score} · {games} games",
   },
   es: {
-    app_title: "¡Scramble de Encuesta!",
+    app_title: "¡Moji Mojo!",
     app_tagline: "¡Adivina las palabras clave más populares de cada emoji antes de que se acabe el tiempo!",
     back_to_launchpad: "VOLVER A LA BASE",
     loading: "CARGANDO",
@@ -152,7 +152,7 @@ const I18N_STRINGS = {
     all_time_score_summary: "mejor {score} · {games} partidas",
   },
   fr: {
-    app_title: "Survey Scramble !",
+    app_title: "Moji Mojo !",
     app_tagline: "Devine les mots-clés les plus populaires pour chaque emoji avant la fin du temps !",
     back_to_launchpad: "RETOUR À LA BASE",
     loading: "CHARGEMENT",
@@ -211,7 +211,7 @@ const I18N_STRINGS = {
     all_time_score_summary: "meilleur {score} · {games} parties",
   },
   pt: {
-    app_title: "Survey Scramble!",
+    app_title: "Moji Mojo!",
     app_tagline: "Adivinhe as palavras-chave mais populares de cada emoji antes que o tempo acabe!",
     back_to_launchpad: "VOLTAR À BASE",
     loading: "CARREGANDO",
@@ -270,7 +270,7 @@ const I18N_STRINGS = {
     all_time_score_summary: "melhor {score} · {games} partidas",
   },
   ru: {
-    app_title: "Опрос-Перемешка!",
+    app_title: "Moji Mojo!",
     app_tagline: "Угадайте самые популярные ключевые слова для каждого эмодзи, пока не закончилось время!",
     back_to_launchpad: "ВЕРНУТЬСЯ НА БАЗУ",
     loading: "ЗАГРУЗКА",
