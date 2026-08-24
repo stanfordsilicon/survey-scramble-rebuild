@@ -70,7 +70,6 @@
   // state returned by the server.
   let room = null;
   let timerInterval = null;
-  let factoidInterval = null;
   let pollTimer = null;
   let heartbeatTimer = null;
 
@@ -85,7 +84,7 @@
   function showScreen(name) {
     Object.values(screens).forEach((el) => el.classList.remove('active'));
     screens[name].classList.add('active');
-    if (name !== 'lobby') stopSoloPromptAndFactoid();
+    if (name !== 'lobby') stopSoloPrompt();
   }
 
   // ---------- sound mute toggle ----------
@@ -383,7 +382,6 @@
     }
 
     maybeShowSoloPrompt();
-    startFactoidRotator();
   }
 
   function applyLobbyState(updatedRoom) {
@@ -441,30 +439,7 @@
     });
   });
 
-  // ---------- LOBBY FACTOIDS ----------
-  function startFactoidRotator() {
-    const box = document.getElementById('lobby-factoid');
-    const textEl = document.getElementById('lobby-factoid-text');
-    const facts = window.SURVEY_SCRAMBLE_FACTOIDS || [];
-    if (factoidInterval || !facts.length) return;
-
-    let index = Math.floor(Math.random() * facts.length);
-    textEl.textContent = facts[index];
-    box.classList.remove('hidden');
-
-    factoidInterval = setInterval(() => {
-      textEl.classList.add('fade');
-      setTimeout(() => {
-        index = (index + 1) % facts.length;
-        textEl.textContent = facts[index];
-        textEl.classList.remove('fade');
-      }, 400);
-    }, 20000);
-  }
-
-  function stopSoloPromptAndFactoid() {
-    clearInterval(factoidInterval);
-    factoidInterval = null;
+  function stopSoloPrompt() {
     document.getElementById('lobby-solo-hint').classList.add('hidden');
   }
 
@@ -716,20 +691,23 @@
   });
 
   // Shared by the final screen's "Go Home" button and the mid-game/scoring
-  // "leave" icon buttons (homeBtnGame/homeBtnScoring) -- previously only the
-  // final screen could leave the room cleanly; bailing out earlier meant
-  // either playing through to the end or navigating away without ever
-  // calling leave-room, which just leaves a ghost player in the room until
-  // its own heartbeat timeout catches up.
+  // "leave" icon buttons (homeBtnGame/homeBtnScoring). This used to just
+  // reset to this game's own login screen -- which, mid-arcade-party, reads
+  // as a dead end: a bare "Survey Scramble"-branded form that isn't where
+  // "Home" sounds like it should go, and isn't reachable from the arcade
+  // homescreen without also losing the party. "Home" now means the same
+  // thing everywhere else in the arcade does -- back to the QMoji
+  // homescreen, same as backToLaunchpadBtn -- rather than a second,
+  // different destination depending on which button happened to be
+  // clicked. leave-room still fires first either way, so no ghost player
+  // is left behind waiting on its own heartbeat timeout.
   function leaveGame() {
     api('leave-room', {}).then(() => {
       stopPolling();
       stopHeartbeat();
       clearSession();
       room = null;
-      showScreen('login');
-      usernameInput.value = '';
-      roomCodeInput.value = '';
+      navigateWithLoadingScreen(QMojiArcade.backToHomescreenUrl(arcadeRoomCode, arcadeLang, arcadePlayerId));
     });
   }
 
