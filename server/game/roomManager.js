@@ -14,7 +14,7 @@
 // session but keeps the same player id, which is what makes
 // rejoin-after-refresh, play-again, and the frozen final leaderboard all work.
 
-const { EMOJI_BOARDS, pointsForRank } = require('../data/emojiData');
+const { EMOJI_BOARDS, pointsForRank, getBoardsForLanguage } = require('../data/emojiData');
 const store = require('./store');
 
 const TOTAL_ROUNDS = 3;
@@ -57,8 +57,8 @@ async function generateUniqueRoomCode() {
   return code;
 }
 
-function pickRoundBoards() {
-  const indices = EMOJI_BOARDS.map((_, i) => i);
+function pickRoundBoards(boards) {
+  const indices = boards.map((_, i) => i);
   for (let i = indices.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [indices[i], indices[j]] = [indices[j], indices[i]];
@@ -66,8 +66,8 @@ function pickRoundBoards() {
   return indices.slice(0, TOTAL_ROUNDS).map((boardIndex, i) => ({
     roundNumber: i + 1,
     boardIndex,
-    emoji: EMOJI_BOARDS[boardIndex].emoji,
-    keywords: EMOJI_BOARDS[boardIndex].keywords,
+    emoji: boards[boardIndex].emoji,
+    keywords: boards[boardIndex].keywords,
     // Shared across the whole room — once any player reveals a keyword it's
     // off-limits for everyone else, so this is keyed by keyword, not player.
     revealed: {},
@@ -250,7 +250,7 @@ async function mutateRoom(roomCode, mutateFn) {
 // room under that code already exists here (e.g. two arcade players both
 // landed on this game first), that existing room is joined instead so
 // there's still only ever one room per code.
-async function createRoom(playerId, username, desiredCode) {
+async function createRoom(playerId, username, desiredCode, language) {
   if (desiredCode) {
     const normalized = String(desiredCode).trim().toUpperCase();
     const existing = await loadRoom(normalized);
@@ -260,6 +260,10 @@ async function createRoom(playerId, username, desiredCode) {
   const room = {
     roomCode,
     hostId: playerId,
+    // Which board set (see server/data/emojiData.js's getBoardsForLanguage)
+    // this room's rounds draw emoji/keywords from -- the arcade party's
+    // Game Language, or "en" standalone/unsupported.
+    language: language || 'en',
     state: 'lobby', // lobby | playing | roundEnd | final
     players: {
       [playerId]: makePlayer(playerId, username, 0),
@@ -360,7 +364,7 @@ async function startGame(roomCode, requesterId) {
     });
     if (!allReady) throw err('NOT_ALL_READY', 'Everyone needs to be ready before starting.');
 
-    r.rounds = pickRoundBoards();
+    r.rounds = pickRoundBoards(getBoardsForLanguage(r.language));
     r.roundIndex = 0;
     r.state = 'playing';
     r.finalLeaderboard = null;
@@ -431,7 +435,7 @@ async function submitGuess(roomCode, playerId, guessText) {
       return { result: 'no-match' };
     }
 
-    const points = pointsForRank(rankIndex);
+    const points = pointsForRank(rankIndex, round.keywords.length);
     const revealedBy = { id: player.id, username: player.username, color: player.color };
     round.revealed[guess] = { rankIndex, points, revealedBy };
     player.score += points;
@@ -619,7 +623,7 @@ function buildGameSessionRecord(room) {
   return {
     game: 'Moji Mojo',
     roomCode: room.roomCode,
-    language: 'en',
+    language: room.language || 'en',
     gameStartedAt: new Date(gameStartedAt),
     gameEndedAt: new Date(gameEndedAt),
     totalDurationMs: gameEndedAt - gameStartedAt,

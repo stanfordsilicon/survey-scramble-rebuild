@@ -189,7 +189,11 @@
   document.getElementById('btn-create-room').addEventListener('click', () => {
     loginError.classList.add('hidden');
     const name = usernameInput.value;
-    api('create-room', { username: name }).then((res) => {
+    // arcadeLang (declared below, set by initArcadeLink()) is already
+    // resolved by the time a real click can happen -- null just means "no
+    // arcade party" or "no board data for that language yet", and the
+    // server falls back to English either way.
+    api('create-room', { username: name, language: arcadeLang }).then((res) => {
       if (!res.ok) return showLoginError(res.error);
       enterRoom(res.room, name || usernameInput.value);
     });
@@ -274,7 +278,7 @@
       enterRoom(res.room, me.name);
       return;
     }
-    const res2 = await api('create-room', { username: me.name, code: arcadeRoomCode });
+    const res2 = await api('create-room', { username: me.name, code: arcadeRoomCode, language: arcadeLang });
     if (!res2.ok) return; // arcade layer is an enhancement — leave the standalone login screen up
     enterRoom(res2.room, me.name);
   })();
@@ -743,12 +747,16 @@
 
   function renderAnswerBoard(boardEl, round, revealAll) {
     boardEl.innerHTML = '';
-    const revealedByRank = new Array(10).fill(null);
+    // Every English board has exactly 10 keywords, but a language board
+    // (see server/data/emojiData.js's getBoardsForLanguage) can be shorter,
+    // so the slot count follows the round's own data instead of assuming 10.
+    const size = (round.keywords && round.keywords.length) || 10;
+    const revealedByRank = new Array(size).fill(null);
     Object.entries(round.revealed || {}).forEach(([keyword, info]) => {
       revealedByRank[info.rankIndex] = { keyword, ...info };
     });
 
-    for (let rank = 0; rank < 10; rank++) {
+    for (let rank = 0; rank < size; rank++) {
       const slot = document.createElement('div');
       slot.className = 'answer-slot';
       const rankBadge = document.createElement('span');

@@ -35,9 +35,44 @@ const EMOJI_BOARDS = [
 ];
 
 // Points for guessing the keyword at a given rank index (0 = top keyword).
-// Mirrors the original prototype's formula: (10 - rank) * 10.
-function pointsForRank(rankIndex) {
-  return (10 - rankIndex) * 10;
+// Mirrors the original prototype's formula: (10 - rank) * 10. `total`
+// defaults to 10 (every English board's exact size) so this is unchanged
+// for existing content; a language board with fewer than 10 keywords (see
+// getBoardsForLanguage below) scales the same way relative to its own size.
+function pointsForRank(rankIndex, total = 10) {
+  return (total - rankIndex) * 10;
 }
 
-module.exports = { EMOJI_BOARDS, pointsForRank };
+// Per-language boards (see server/data/lang/*.json), generated from QMoji's
+// shared CLDR emoji-keyword source: for each of this file's 21 emoji, that
+// language's own keywords for it, when there are enough to be worth
+// playing. Unlike EMOJI_BOARDS' keywords -- ranked by an actual player
+// survey -- CLDR keyword order carries no popularity signal, so a language
+// board's keyword order is just the source data's own order, not "most
+// guessed first." Not every Game Language has enough coverage across
+// enough of these 21 emoji to be worth shipping as its own board set; only
+// languages that cleared that bar at generation time have a file here.
+const fs = require("fs");
+const path = require("path");
+const LANG_DATA_DIR = path.join(__dirname, "lang");
+const langBoardsCache = new Map();
+
+function getBoardsForLanguage(lang) {
+  if (!lang || lang === "en") return EMOJI_BOARDS;
+  if (langBoardsCache.has(lang)) return langBoardsCache.get(lang);
+
+  let boards = EMOJI_BOARDS;
+  const file = path.join(LANG_DATA_DIR, `${lang}.json`);
+  if (fs.existsSync(file)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+      if (Array.isArray(parsed) && parsed.length > 0) boards = parsed;
+    } catch (e) {
+      console.error(`Failed to load Moji Mojo boards for language "${lang}":`, e.message);
+    }
+  }
+  langBoardsCache.set(lang, boards);
+  return boards;
+}
+
+module.exports = { EMOJI_BOARDS, pointsForRank, getBoardsForLanguage };
