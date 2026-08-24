@@ -694,9 +694,9 @@
     });
   });
 
-  // Shared by the final screen's "Go Home" button and the mid-game/scoring
-  // "leave" icon buttons (homeBtnGame/homeBtnScoring). This used to just
-  // reset to this game's own login screen -- which, mid-arcade-party, reads
+  // Shared by the final screen's "Go Home" button and the mid-game "leave"
+  // icon button (homeBtnGame). This used to just reset to this game's own
+  // login screen -- which, mid-arcade-party, reads
   // as a dead end: a bare "Survey Scramble"-branded form that isn't where
   // "Home" sounds like it should go, and isn't reachable from the arcade
   // homescreen without also losing the party. "Home" now means the same
@@ -718,8 +718,6 @@
   document.getElementById('btn-go-home').addEventListener('click', leaveGame);
   const homeBtnGame = document.getElementById('homeBtnGame');
   if (homeBtnGame) homeBtnGame.addEventListener('click', leaveGame);
-  const homeBtnScoring = document.getElementById('homeBtnScoring');
-  if (homeBtnScoring) homeBtnScoring.addEventListener('click', leaveGame);
 
   // ---------- SHARED RENDER HELPERS ----------
   function renderLeaderboard(listEl, players) {
