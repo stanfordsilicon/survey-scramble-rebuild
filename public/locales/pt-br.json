@@ -1,5 +1,5 @@
 {
-  "app_title": "Moji Mojo",
+  "app_title": "Moji Mojo!",
   "app_tagline": "Adivinhe as principais palavras-chave para cada emoji antes que o tempo acabe!",
   "back_to_launchpad": "VOLTAR À BASE",
   "loading": "CARREGANDO",
@@ -32,7 +32,6 @@
   "lobby_waiting_guest_ready": "Aguardando que o anfitrião inicie o jogo…",
   "lobby_waiting_not_ready": "Esperando todo mundo ficar pronto…",
   "play_solo_button": "🎮 Jogue sozinho por enquanto",
-  "factoid_label": "Você sabia?",
   "round_progress": "Rodada {round} / {total}",
   "game_instructions": "Digite uma das principais palavras-chave relacionadas a este emoji — quem acertar primeiro ganha os pontos!",
   "guess_activity": "🎯 {count} palpites até agora nesta rodada",
@@ -45,7 +44,6 @@
   "guess_wrong": "Não está entre os 10 primeiros. Tente novamente!",
   "round_results_title": "Resultados da Rodada {round}",
   "final_round_results_title": "Resultados da Rodada Final",
-  "answer_source_note": "As respostas são as 10 primeiras colocadas de uma pesquisa offline de palavras-chave do QMoji, e não sugestões enviadas ao vivo pelos jogadores.",
   "leaderboard_heading": "Classificação",
   "next_round_button": "Próxima rodada",
   "see_final_results_button": "Veja os resultados finais",

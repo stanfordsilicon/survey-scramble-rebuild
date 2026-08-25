@@ -1,5 +1,5 @@
 {
-  "app_title": "Moji Mojo",
+  "app_title": "Moji Mojo!",
   "app_tagline": "Devine les mots-clés les plus utilisés pour chaque emoji avant la fin du temps imparti !",
   "back_to_launchpad": "RETOUR À LA BASE",
   "loading": "CHARGEMENT",
@@ -32,7 +32,6 @@
   "lobby_waiting_guest_ready": "En attente que l'hôte lance la partie…",
   "lobby_waiting_not_ready": "En attendant que tout le monde soit prêt…",
   "play_solo_button": "🎮 Jouer en solo pour l'instant",
-  "factoid_label": "Le savais-tu ?",
   "round_progress": "Tour {round} / {total}",
   "game_instructions": "Tape l'un des mots-clés les plus populaires pour cet emoji — le premier à deviner chacun d'eux remporte les points !",
   "guess_activity": "🎯 {count} tentatives jusqu'ici ce tour",
@@ -45,7 +44,6 @@
   "guess_wrong": "Pas dans le top 10. Réessaie !",
   "round_results_title": "Résultats du tour {round}",
   "final_round_results_title": "Résultats du dernier tour",
-  "answer_source_note": "Les réponses correspondent au top 10 établi à partir d'un sondage hors ligne sur les mots-clés QMoji, et non à des propositions soumises en direct par les joueurs.",
   "leaderboard_heading": "Classement",
   "next_round_button": "Prochain tour",
   "see_final_results_button": "Voir les résultats définitifs",
