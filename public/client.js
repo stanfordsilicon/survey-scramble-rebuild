@@ -1,4 +1,7 @@
-(() => {
+// Gated on initI18n(): the string table now arrives over the network, so
+// nothing here may run until it has loaded -- the very first statement
+// below paints UI text. initI18n() never rejects, so this always runs.
+initI18n().then(() => {
   // Static (non-templated) UI text is data-i18n-driven -- see public/i18n.js.
   // Anything with dynamic content (a score, a room code) is set directly
   // below via t() instead, since data-i18n has no way to carry variables.
@@ -784,4 +787,4 @@
       boardEl.appendChild(slot);
     }
   }
-})();
+});
