@@ -75,6 +75,7 @@ const DO_NOT_TRANSLATE = new Set([
   "game_title_odd",
   "game_title_one",
   "game_title_out",
+  "game_title_moji",
 ]);
 
 // ---------------------------------------------------------------------
@@ -388,8 +389,17 @@ function normalizeNumber(tok) {
   return s.replace(/\.$/, "");
 }
 
+// "1998-99" and "1998-1999" are the same range; Russian and French routinely
+// expand the abbreviated form. Expanding BOTH sides before comparing means
+// that reads as identical rather than as 99 having become 1999.
+function expandYearRanges(str) {
+  return str.replace(/\b(\d{2})(\d{2})\s*[\u2013\u2014-]\s*(\d{2})\b(?!\d)/g, "$1$2-$1$3");
+}
+
 function numberSequence(str) {
-  return (str.match(NUMBER_RE) || []).map((t) => t.replace(/[\u00A0\u202F\u2009\u2007 ]/g, ""));
+  return (expandYearRanges(str).match(NUMBER_RE) || []).map((t) =>
+    t.replace(/[\u00A0\u202F\u2009\u2007 ]/g, ""),
+  );
 }
 
 // French and Russian often group digits with an ORDINARY space ("1 500").
@@ -402,7 +412,18 @@ function numberSequenceLoose(str) {
   return numberSequence(merged);
 }
 
-function validate(lang, source, out) {
+function sortedNums(list) {
+  return list.slice().sort();
+}
+
+// Some figures legitimately disappear in translation: "#1 most-used" becomes
+// "the most used", "10th anniversary" becomes "décimo aniversario". The
+// figure is gone but the claim is unchanged. Rather than loosen the check
+// for everything, those keys are named one at a time in
+// <bundle>.numeric-exempt.json, each with a written reason, so every
+// exemption stays a deliberate and reviewable decision. Exempt keys still
+// report their mismatch -- they just don't fail the run.
+function validate(lang, source, out, numericExempt) {
   const problems = [];
   const formatNotes = [];
   for (const [key, en] of Object.entries(source)) {
@@ -422,22 +443,34 @@ function validate(lang, source, out) {
     const outNums = numberSequence(got);
     const srcNorm = srcNums.map(normalizeNumber);
     const outNorm = outNums.map(normalizeNumber);
-    let matched = sameMultiset(srcNorm, outNorm);
+    // Pass/fail is on the SET of figures, not their order. Dropping or
+    // altering a number is an error; reordering is not -- translating
+    // "iOS 5 in 2011" into Russian naturally yields "in 2011, with iOS 5",
+    // and failing that would be a false alarm on correct output. Order
+    // differences are reported instead, alongside formatting ones.
+    let matched = sameMultiset(sortedNums(srcNorm), sortedNums(outNorm));
     let outShown = outNums;
     if (!matched) {
       const loose = numberSequenceLoose(got);
-      if (sameMultiset(srcNorm, loose.map(normalizeNumber))) {
+      if (sameMultiset(sortedNums(srcNorm), sortedNums(loose.map(normalizeNumber)))) {
         matched = true;
         outShown = loose; // grouped with plain spaces -- a format difference
       }
     }
     if (!matched) {
-      problems.push(
-        `${key}: number mismatch -- source has [${srcNums.join(", ") || "none"}], output has [${outNums.join(", ") || "none"}]\n      en: ${en}\n      ${lang}: ${got}`,
-      );
+      const line = `${key}: number mismatch -- source has [${srcNums.join(", ") || "none"}], output has [${outNums.join(", ") || "none"}]\n      en: ${en}\n      ${lang}: ${got}`;
+      if (numericExempt && Object.prototype.hasOwnProperty.call(numericExempt, key)) {
+        formatNotes.push(`${key}: EXEMPT (${numericExempt[key]})  [${srcNums.join(", ") || "none"}] -> [${outNums.join(", ") || "none"}]`);
+      } else {
+        problems.push(line);
+      }
     } else if (srcNums.join("|") !== outShown.join("|")) {
-      // Same values, different presentation -- correct localization.
-      formatNotes.push(`${key}: ${srcNums.join(", ")} -> ${outShown.join(", ")}`);
+      // Same figures, different presentation or clause order -- correct
+      // localization, but surfaced so a reviewer can confirm it at a glance.
+      const reordered = sortedNums(srcNums).join("|") === sortedNums(outShown).join("|");
+      formatNotes.push(
+        `${key}: ${srcNums.join(", ")} -> ${outShown.join(", ")}${reordered ? "  (reordered)" : ""}`,
+      );
     }
 
     const srcEmoji = emojiCodepoints(en);
@@ -479,6 +512,8 @@ async function main() {
 
   const source = readJson(SOURCE);
   if (!source) throw new Error(`missing source file: ${SOURCE}`);
+  // Optional per repo. Absent means no exemptions.
+  const numericExempt = readJson(join(LOCALES, "numeric-exempt.json"), {}) || {};
 
   const argv = process.argv.slice(2);
   // --force re-translates everything even when the English is unchanged.
@@ -593,7 +628,7 @@ async function main() {
       snapshot[k] = source[k];
     }
 
-    const { problems, formatNotes } = validate(lang, source, out);
+    const { problems, formatNotes } = validate(lang, source, out, numericExempt);
     if (formatNotes.length) {
       // Not a failure: the figures match, the locale just writes them
       // differently. Surfaced so a reviewer can tell this apart from a
