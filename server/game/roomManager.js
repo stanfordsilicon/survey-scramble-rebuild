@@ -250,7 +250,7 @@ async function mutateRoom(roomCode, mutateFn) {
 // room under that code already exists here (e.g. two arcade players both
 // landed on this game first), that existing room is joined instead so
 // there's still only ever one room per code.
-async function createRoom(playerId, username, desiredCode, language) {
+async function createRoom(playerId, username, desiredCode, language, uiLang) {
   if (desiredCode) {
     const normalized = String(desiredCode).trim().toUpperCase();
     const existing = await loadRoom(normalized);
@@ -264,6 +264,11 @@ async function createRoom(playerId, username, desiredCode, language) {
     // this room's rounds draw emoji/keywords from -- the arcade party's
     // Game Language, or "en" standalone/unsupported.
     language: language || 'en',
+    // The arcade party's Screen Language. This game has no UI translation
+    // of its own -- purely a data-capture pass-through, recorded alongside
+    // Game Language in analytics so which languages people are actually
+    // combining is visible downstream.
+    uiLang: uiLang || 'en',
     state: 'lobby', // lobby | playing | roundEnd | final
     players: {
       [playerId]: makePlayer(playerId, username, 0),
@@ -623,7 +628,8 @@ function buildGameSessionRecord(room) {
   return {
     game: 'Moji Mojo',
     roomCode: room.roomCode,
-    language: room.language || 'en',
+    language: room.language || 'en', // Game Language -- which board set this session's rounds drew from
+    screenLanguage: room.uiLang || 'en', // Screen Language -- the arcade party's interface language
     gameStartedAt: new Date(gameStartedAt),
     gameEndedAt: new Date(gameEndedAt),
     totalDurationMs: gameEndedAt - gameStartedAt,

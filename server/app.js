@@ -66,10 +66,16 @@ function normName(value) {
 
 app.post('/api/create-room', async (req, res) => {
   try {
-    const { username, playerId, code, language } = req.body || {};
+    const { username, playerId, code, language, uiLang } = req.body || {};
     const id = normId(playerId);
     if (!id) return res.json({ ok: false, error: 'Missing player id.' });
-    const room = await rooms.createRoom(id, normName(username), code, typeof language === 'string' ? language : undefined);
+    const room = await rooms.createRoom(
+      id,
+      normName(username),
+      code,
+      typeof language === 'string' ? language : undefined,
+      typeof uiLang === 'string' ? uiLang : undefined
+    );
     maybeSaveAnalytics(room);
     res.json({ ok: true, room: rooms.toClientView(room) });
   } catch (e) {

@@ -189,11 +189,11 @@
   document.getElementById('btn-create-room').addEventListener('click', () => {
     loginError.classList.add('hidden');
     const name = usernameInput.value;
-    // arcadeLang (declared below, set by initArcadeLink()) is already
-    // resolved by the time a real click can happen -- null just means "no
-    // arcade party" or "no board data for that language yet", and the
-    // server falls back to English either way.
-    api('create-room', { username: name, language: arcadeLang }).then((res) => {
+    // arcadeLang/arcadeUiLang (declared below, set by initArcadeLink()) are
+    // already resolved by the time a real click can happen -- null just
+    // means "no arcade party" or "no board data for that language yet",
+    // and the server falls back to English either way.
+    api('create-room', { username: name, language: arcadeLang, uiLang: arcadeUiLang }).then((res) => {
       if (!res.ok) return showLoginError(res.error);
       enterRoom(res.room, name || usernameInput.value);
     });
@@ -220,6 +220,7 @@
   const backToLaunchpadBtn = document.getElementById('backToLaunchpadBtn');
   let arcadeRoomCode = null;
   let arcadeLang = null;
+  let arcadeUiLang = null;
   let arcadePlayerId = null;
 
   // Mirrors qmoji/app.js's own launchGame() transition (fade in "LOADING…"
@@ -246,7 +247,7 @@
     // Not awaited -- navigateWithLoadingScreen's own ~650ms transition delay
     // is enough time for this to reach the server either way.
     if (room) api('leave-room', {}).catch(() => {});
-    navigateWithLoadingScreen(QMojiArcade.backToHomescreenUrl(arcadeRoomCode, arcadeLang, arcadePlayerId));
+    navigateWithLoadingScreen(QMojiArcade.backToHomescreenUrl(arcadeRoomCode, arcadeLang, arcadePlayerId, arcadeUiLang));
   });
 
   (async function initArcadeLink() {
@@ -254,6 +255,7 @@
     if (!arcade) return;
     arcadeRoomCode = arcade.roomCode;
     arcadeLang = arcade.lang;
+    arcadeUiLang = arcade.uiLang;
     arcadePlayerId = arcade.playerId;
 
     const me = (arcade.room.players || []).find((p) => p.playerId === arcadePlayerId);
@@ -278,7 +280,7 @@
       enterRoom(res.room, me.name);
       return;
     }
-    const res2 = await api('create-room', { username: me.name, code: arcadeRoomCode, language: arcadeLang });
+    const res2 = await api('create-room', { username: me.name, code: arcadeRoomCode, language: arcadeLang, uiLang: arcadeUiLang });
     if (!res2.ok) return; // arcade layer is an enhancement — leave the standalone login screen up
     enterRoom(res2.room, me.name);
   })();
@@ -711,7 +713,7 @@
       stopHeartbeat();
       clearSession();
       room = null;
-      navigateWithLoadingScreen(QMojiArcade.backToHomescreenUrl(arcadeRoomCode, arcadeLang, arcadePlayerId));
+      navigateWithLoadingScreen(QMojiArcade.backToHomescreenUrl(arcadeRoomCode, arcadeLang, arcadePlayerId, arcadeUiLang));
     });
   }
 
