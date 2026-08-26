@@ -54,24 +54,54 @@ function pointsForRank(rankIndex, total = 10) {
 // languages that cleared that bar at generation time have a file here.
 const fs = require("fs");
 const path = require("path");
+const phaseFilter = require("./phaseFilter");
 const LANG_DATA_DIR = path.join(__dirname, "lang");
 const langBoardsCache = new Map();
 
+// A room needs at least this many boards to pick TOTAL_ROUNDS (3, see
+// roomManager.js) distinct ones from -- mirrored here as a plain constant
+// rather than imported, since roomManager.js already imports this file and
+// importing back would be circular. If qmoji-2's Phase system restricts a
+// language down to fewer boards than this, filtering isn't usable for that
+// language and getBoardsForLanguage falls back to the unfiltered set,
+// exactly like Munchers' equivalent "would break the round generator"
+// fallback.
+const MIN_PLAYABLE_BOARDS = 3;
+
+function loadBoardsFromDisk(lang) {
+  const file = path.join(LANG_DATA_DIR, `${lang}.json`);
+  if (!fs.existsSync(file)) return EMOJI_BOARDS;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : EMOJI_BOARDS;
+  } catch (e) {
+    console.error(`Failed to load Moji Mojo boards for language "${lang}":`, e.message);
+    return EMOJI_BOARDS;
+  }
+}
+
 function getBoardsForLanguage(lang) {
   if (!lang || lang === "en") return EMOJI_BOARDS;
-  if (langBoardsCache.has(lang)) return langBoardsCache.get(lang);
 
-  let boards = EMOJI_BOARDS;
-  const file = path.join(LANG_DATA_DIR, `${lang}.json`);
-  if (fs.existsSync(file)) {
-    try {
-      const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
-      if (Array.isArray(parsed) && parsed.length > 0) boards = parsed;
-    } catch (e) {
-      console.error(`Failed to load Moji Mojo boards for language "${lang}":`, e.message);
-    }
+  // Never blocks: reads whatever the last background fetch already found
+  // (null/no restriction until one lands) and kicks off a fresh one if this
+  // language's result is missing or stale. See phaseFilter.js.
+  phaseFilter.refreshInBackground(lang);
+  const allowedSet = phaseFilter.getAllowedSet(lang);
+  const cacheKey = allowedSet ? `${lang}|v${phaseFilter.getVersion(lang)}` : `${lang}|unfiltered`;
+  if (langBoardsCache.has(cacheKey)) return langBoardsCache.get(cacheKey);
+
+  let boards = loadBoardsFromDisk(lang);
+  if (allowedSet) {
+    const filtered = boards.filter((b) => allowedSet.has(b.emoji));
+    // Only apply the restriction if enough boards survive it -- an admin
+    // curating a Phase set has no way to know it needs to overlap this
+    // game's specific 21-emoji roster, so a too-small overlap falls back to
+    // the unfiltered set rather than breaking the round generator.
+    if (filtered.length >= MIN_PLAYABLE_BOARDS) boards = filtered;
   }
-  langBoardsCache.set(lang, boards);
+
+  langBoardsCache.set(cacheKey, boards);
   return boards;
 }
 
