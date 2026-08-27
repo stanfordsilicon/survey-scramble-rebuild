@@ -570,19 +570,6 @@ body {
 }
 .icon-btn:hover { border-color: var(--cyan); }
 
-/* Overlaid in the corner rather than joining the flex row (.game-top) or
-   the centered column (.card) they sit in, so the existing round/timer/
-   score layout and the scoring card's centered content stay exactly as
-   they were -- this is purely additive. */
-#homeBtnGame {
-  position: absolute;
-  left: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 36px;
-  height: 36px;
-  font-size: 16px;
-}
 .card.wide { position: relative; }
 
 /* ---------- loading screen (return-to-launchpad transition) ---------- */

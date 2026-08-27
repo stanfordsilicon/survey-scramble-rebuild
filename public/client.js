@@ -699,17 +699,15 @@ initI18n().then(() => {
     });
   });
 
-  // Shared by the final screen's "Go Home" button and the mid-game "leave"
-  // icon button (homeBtnGame). This used to just reset to this game's own
-  // login screen -- which, mid-arcade-party, reads
-  // as a dead end: a bare "Survey Scramble"-branded form that isn't where
-  // "Home" sounds like it should go, and isn't reachable from the arcade
+  // Used by the final screen's "Go Home" button. This used to just reset to
+  // this game's own login screen -- which, mid-arcade-party, reads as a dead
+  // end: a bare "Survey Scramble"-branded form that isn't where "Home"
+  // sounds like it should go, and isn't reachable from the arcade
   // homescreen without also losing the party. "Home" now means the same
   // thing everywhere else in the arcade does -- back to the QMoji
-  // homescreen, same as backToLaunchpadBtn -- rather than a second,
-  // different destination depending on which button happened to be
-  // clicked. leave-room still fires first either way, so no ghost player
-  // is left behind waiting on its own heartbeat timeout.
+  // homescreen, same as backToLaunchpadBtn. leave-room still fires first
+  // either way, so no ghost player is left behind waiting on its own
+  // heartbeat timeout.
   function leaveGame() {
     api('leave-room', {}).then(() => {
       stopPolling();
@@ -721,8 +719,6 @@ initI18n().then(() => {
   }
 
   document.getElementById('btn-go-home').addEventListener('click', leaveGame);
-  const homeBtnGame = document.getElementById('homeBtnGame');
-  if (homeBtnGame) homeBtnGame.addEventListener('click', leaveGame);
 
   // ---------- SHARED RENDER HELPERS ----------
   function renderLeaderboard(listEl, players) {
