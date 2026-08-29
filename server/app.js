@@ -20,6 +20,7 @@ const express = require('express');
 const rooms = require('./game/roomManager');
 const { connectMongo, getDb, recordPlayerResults, getLeaderboard } = require('./data/mongo');
 const { arcadeProxy } = require('./arcade-proxy');
+const phaseFilter = require('./data/phaseFilter');
 
 const app = express();
 app.use(express.json());
@@ -126,7 +127,16 @@ app.post('/api/set-ready', async (req, res) => {
 app.post('/api/start-game', async (req, res) => {
   try {
     const { roomCode, playerId } = req.body || {};
-    const room = await rooms.startGame(normCode(roomCode), normId(playerId));
+    const code = normCode(roomCode);
+    // Bounded wait (see phaseFilter.js's ensureFresh) before the boards for
+    // this room's actual rounds get picked -- create-room can't pre-warm
+    // this itself, since Moji Mojo doesn't pick round boards until the game
+    // actually starts (getBoardsForLanguage isn't called until here). A cold
+    // serverless instance's fire-and-forget background fetch has no
+    // guarantee of finishing before this specific request needs it.
+    const existing = await rooms.getRoom(code);
+    if (existing) await phaseFilter.ensureFresh(existing.language || 'en');
+    const room = await rooms.startGame(code, normId(playerId));
     maybeSaveAnalytics(room);
     res.json({ ok: true, room: rooms.toClientView(room) });
   } catch (e) {
