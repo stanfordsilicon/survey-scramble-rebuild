@@ -69,6 +69,12 @@ const langBoardsCache = new Map();
 const MIN_PLAYABLE_BOARDS = 3;
 
 function loadBoardsFromDisk(lang) {
+  // English always uses the deliberately-curated survey boards, even though
+  // server/data/lang/en.json also exists -- that file is a mechanical
+  // byproduct of generating the other 49 languages' CLDR-derived data (same
+  // 20-emoji roster, on purpose, so every language's board set lines up),
+  // not a considered replacement for content an actual survey produced.
+  if (lang === "en") return EMOJI_BOARDS;
   const file = path.join(LANG_DATA_DIR, `${lang}.json`);
   if (!fs.existsSync(file)) return EMOJI_BOARDS;
   try {
@@ -81,11 +87,17 @@ function loadBoardsFromDisk(lang) {
 }
 
 function getBoardsForLanguage(lang) {
-  if (!lang || lang === "en") return EMOJI_BOARDS;
+  if (!lang) return EMOJI_BOARDS;
 
   // Never blocks: reads whatever the last background fetch already found
   // (null/no restriction until one lands) and kicks off a fresh one if this
-  // language's result is missing or stale. See phaseFilter.js.
+  // language's result is missing or stale. See phaseFilter.js. Applies to
+  // "en" too -- it used to short-circuit past this whole function (English
+  // has no per-language file, it just *is* EMOJI_BOARDS), but that also
+  // meant English could never be Phase-restricted, which is exactly the
+  // language an admin is most likely to curate first. loadBoardsFromDisk
+  // already returns EMOJI_BOARDS as-is for "en" (no lang/en.json file
+  // exists), so it naturally becomes the base this filters against.
   phaseFilter.refreshInBackground(lang);
   const allowedSet = phaseFilter.getAllowedSet(lang);
   const cacheKey = allowedSet ? `${lang}|v${phaseFilter.getVersion(lang)}` : `${lang}|unfiltered`;
