@@ -16,9 +16,10 @@
 // can reuse the identical app.
 
 const path = require('path');
+const crypto = require('crypto');
 const express = require('express');
 const rooms = require('./game/roomManager');
-const { connectMongo, getDb, recordPlayerResults, getLeaderboard } = require('./data/mongo');
+const { connectMongo, getDb, recordPlayerResults, getLeaderboard, clearLeaderboard } = require('./data/mongo');
 const { arcadeProxy } = require('./arcade-proxy');
 const phaseFilter = require('./data/phaseFilter');
 
@@ -225,6 +226,39 @@ app.post('/api/heartbeat', async (req, res) => {
 
 app.get('/api/leaderboard', async (req, res) => {
   res.json({ leaderboard: await getLeaderboard(20) });
+});
+
+// crypto.timingSafeEqual throws on length mismatch, so pad both sides to
+// the same length first -- a length-revealing early return would leak the
+// secret's length one comparison at a time. Mirrors emoji-munchers'
+// identical helper.
+function timingSafeStringEqual(a, b) {
+  const bufA = Buffer.from(String(a));
+  const bufB = Buffer.from(String(b));
+  const len = Math.max(bufA.length, bufB.length, 1);
+  const paddedA = Buffer.alloc(len);
+  const paddedB = Buffer.alloc(len);
+  bufA.copy(paddedA);
+  bufB.copy(paddedB);
+  return crypto.timingSafeEqual(paddedA, paddedB) && bufA.length === bufB.length;
+}
+
+// Admin-only, server-to-server: qmoji-2's own /api/admin/clear-leaderboard
+// route is the only intended caller -- it authenticates the human admin
+// itself (a real qmoji-2 admin session token) and then relays here with
+// this shared secret, so the secret never reaches a browser.
+app.post('/api/admin/clear-leaderboard', async (req, res) => {
+  const expected = process.env.QMOJI_ADMIN_SECRET;
+  const given = req.get('x-qmoji-admin-secret') || '';
+  if (!expected || !timingSafeStringEqual(given, expected)) {
+    return res.status(403).json({ ok: false, error: 'Forbidden' });
+  }
+  try {
+    await clearLeaderboard();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 // Polling endpoint — replaces the old room_update/round_started/round_ended/

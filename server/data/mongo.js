@@ -113,4 +113,12 @@ async function getLeaderboard(limit = 20) {
   }
 }
 
-module.exports = { connectMongo, getDb, recordPlayerResults, getLeaderboard };
+// Unlike emoji-munchers' players collection, this one holds no accounts or
+// passwordHash -- Moji Mojo is guest-only -- so a full document wipe is
+// safe rather than needing a stats-only reset.
+async function clearLeaderboard() {
+  if (!db) return;
+  await db.collection('players').deleteMany({});
+}
+
+module.exports = { connectMongo, getDb, recordPlayerResults, getLeaderboard, clearLeaderboard };
